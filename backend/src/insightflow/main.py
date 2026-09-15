@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from insightflow.config import settings
 from insightflow.llm import GeminiSqlGenerator, LlmUnavailableError, PreviousAttempt, QueryContext, SqlGenerator, Summarizer
 from insightflow.ratelimit import SlidingWindowLimiter
-from insightflow.schemas import RepairRequest, SqlAnswer, SqlRequest, SummaryAnswer, SummaryRequest, Unanswerable
+from insightflow.schemas import QueryPayload, RepairRequest, SqlAnswer, SqlRequest, SummaryAnswer, SummaryRequest, Unanswerable
 from insightflow.service import SqlGenerationFailed, answer
 from insightflow.summary import NotAggregatedError, ensure_aggregated
 
@@ -68,6 +68,10 @@ async def _run(generator: SqlGenerator, ctx: QueryContext, previous: PreviousAtt
         raise HTTPException(502, "Yapay zekâ servisine şu an ulaşılamıyor. Biraz sonra tekrar deneyin.") from err
 
 
+def _context(body: QueryPayload) -> QueryContext:
+    return QueryContext(body.question, body.columns, body.history, body.tables, body.relationships)
+
+
 @app.get("/health")
 def health() -> dict[str, object]:
     return {"status": "ok", "llm_configured": settings.gemini_api_key is not None}
@@ -75,7 +79,7 @@ def health() -> dict[str, object]:
 
 @app.post("/sql", response_model=SqlAnswer | Unanswerable, dependencies=[Depends(rate_limited)])
 async def generate_sql(body: SqlRequest, generator: SqlGenerator = Depends(get_generator)):
-    return await _run(generator, QueryContext(body.question, body.columns, body.history))
+    return await _run(generator, _context(body))
 
 
 def get_summarizer() -> Summarizer:
@@ -87,7 +91,7 @@ def get_summarizer() -> Summarizer:
 @app.post("/summary", response_model=SummaryAnswer, dependencies=[Depends(rate_limited)])
 async def summarize(body: SummaryRequest, summarizer: Summarizer = Depends(get_summarizer)):
     try:
-        ensure_aggregated(body.sql)
+        ensure_aggregated(body.sql, body.tables)
     except NotAggregatedError as err:
         raise HTTPException(422, str(err)) from err
     try:
@@ -100,4 +104,4 @@ async def summarize(body: SummaryRequest, summarizer: Summarizer = Depends(get_s
 @app.post("/repair", response_model=SqlAnswer | Unanswerable, dependencies=[Depends(rate_limited)])
 async def repair_sql(body: RepairRequest, generator: SqlGenerator = Depends(get_generator)):
     previous = PreviousAttempt(sql=body.sql, error=body.error)
-    return await _run(generator, QueryContext(body.question, body.columns, body.history), previous)
+    return await _run(generator, _context(body), previous)

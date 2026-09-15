@@ -6,7 +6,7 @@ Tarayıcıdaki motor ayrıca kilitli olduğu için bu katman tek savunma değil,
 
 Kurallar:
 1. Tek ifade, kökü SELECT veya küme işlemi (UNION/INTERSECT/EXCEPT).
-2. Tablo izin listesi: yalnızca `data` ve sorgunun kendi tanımladığı CTE'ler; şema/katalog
+2. Tablo izin listesi: yalnızca `data`, kullanıcının eklediği tablolar ve sorgunun kendi CTE'leri; şema/katalog
    niteliği, dosya yolu veya tablo fonksiyonu yok.
 3. Fonksiyon izin listesi: analitik fonksiyonlar dışında her şey reddedilir
    (read_csv, glob, getenv, current_setting, duckdb_* ...).
@@ -16,6 +16,7 @@ Kurallar:
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 import sqlglot
@@ -85,7 +86,8 @@ def _enforce_limit(root: exp.Query) -> tuple[exp.Query, bool]:
     return root.limit(MAX_ROWS), True
 
 
-def validate_sql(sql: str) -> ValidatedSql:
+def validate_sql(sql: str, extra_tables: Iterable[str] = ()) -> ValidatedSql:
+    """`extra_tables`: kullanıcının eklediği dosyalardan oluşan tablolar; ana tablo `data` her zaman izinlidir."""
     text = sql.strip().rstrip(";").strip()
     if not text:
         raise UnsafeSqlError("empty", "SQL boş.")
@@ -106,15 +108,16 @@ def validate_sql(sql: str) -> ValidatedSql:
             "not_select", f"Yalnızca SELECT sorgularına izin verilir (gelen: {root.key.upper()})."
         )
 
-    allowed_tables = {TABLE_NAME} | _cte_names(root)
+    allowed_tables = {TABLE_NAME} | {t.lower() for t in extra_tables} | _cte_names(root)
+    table_list = ", ".join(f"`{t}`" for t in sorted({TABLE_NAME} | {t.lower() for t in extra_tables}))
     for node in root.walk():
         if isinstance(node, exp.Table):
             if not isinstance(node.this, exp.Identifier):
-                raise UnsafeSqlError("table_function", "FROM içinde tablo fonksiyonu kullanılamaz; yalnızca `data` tablosu.")
+                raise UnsafeSqlError("table_function", f"FROM içinde tablo fonksiyonu kullanılamaz; yalnızca {table_list}.")
             if node.args.get("db") or node.args.get("catalog"):
                 raise UnsafeSqlError("qualified_table", "Tablo adı şema veya katalog ile nitelenemez.")
             if node.name.lower() not in allowed_tables:
-                raise UnsafeSqlError("unknown_table", f"`{node.name}` tablosuna erişilemez; yalnızca `data` kullanılabilir.")
+                raise UnsafeSqlError("unknown_table", f"`{node.name}` tablosuna erişilemez; yalnızca {table_list} kullanılabilir.")
         elif isinstance(node, exp.Func) and not isinstance(node, (exp.Binary, exp.Connector)):
             # AND/OR gibi araya yazılan operatörler sqlglot'ta Func sayılır ama fonksiyon çağrısı değildir.
             name = _function_name(node)

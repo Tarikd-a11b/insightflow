@@ -22,6 +22,12 @@ export interface DatasetProfile {
   loadMs: number;
 }
 
+/** Motordaki bir tablo: ana tablo `data`, eklenen dosyalar kendi adlarıyla. */
+export interface TableProfile extends DatasetProfile {
+  table: string;
+  sizeBytes: number;
+}
+
 export interface QueryResult {
   columns: string[];
   rows: Record<string, unknown>[];

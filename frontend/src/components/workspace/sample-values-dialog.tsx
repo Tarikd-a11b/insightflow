@@ -3,10 +3,14 @@
 import { Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { MAX_SHARED_VALUES, normalizeValues, sampleValueCandidates, type SharedValues } from "@/lib/data/sample-values";
+import { PRIMARY_TABLE } from "@/lib/data/tables";
 import type { ColumnProfile } from "@/lib/data/types";
 import { cn } from "@/lib/utils";
 
-type Preview = { name: string; values: string[] };
+/** `key`: ana tabloda sütun adı, ek tablolarda `tablo.sütun` (paylaşılan değerlerin anahtarı). */
+type Preview = { key: string; values: string[] };
+
+export const sharedKey = (table: string, column: string) => (table === PRIMARY_TABLE ? column : `${table}.${column}`);
 
 /**
  * Az kategorili sütunların değerlerini modele göndermek için onay penceresi. Gönderilecek değerlerin tamamı
@@ -15,17 +19,17 @@ type Preview = { name: string; values: string[] };
 export function SampleValuesDialog({
   open,
   onClose,
-  columns,
+  tables,
   shared,
   onChange,
   readValues,
 }: {
   open: boolean;
   onClose: () => void;
-  columns: ColumnProfile[];
+  tables: { table: string; columns: ColumnProfile[] }[];
   shared: SharedValues;
   onChange: (next: SharedValues) => void;
-  readValues: (column: string) => Promise<unknown[]>;
+  readValues: (table: string, column: string) => Promise<unknown[]>;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [previews, setPreviews] = useState<Preview[] | null>(null);
@@ -43,13 +47,13 @@ export function SampleValuesDialog({
   useEffect(() => {
     if (!open) return;
     let alive = true;
-    const candidates = sampleValueCandidates(columns);
-    Promise.all(candidates.map(async (c) => ({ name: c.name, values: normalizeValues(await readValues(c.name)) })))
+    const candidates = tables.flatMap((t) => sampleValueCandidates(t.columns).map((c) => ({ table: t.table, column: c.name })));
+    Promise.all(candidates.map(async (c) => ({ key: sharedKey(c.table, c.column), values: normalizeValues(await readValues(c.table, c.column)) })))
       .then((list) => {
         if (!alive) return;
         const usable = list.filter((p) => p.values.length > 0 && p.values.length <= MAX_SHARED_VALUES);
         setPreviews(usable);
-        setSelected(new Set(Object.keys(shared).length ? Object.keys(shared) : usable.map((p) => p.name)));
+        setSelected(new Set(Object.keys(shared).length ? Object.keys(shared) : usable.map((p) => p.key)));
         setError(null);
       })
       .catch(() => alive && setError("Değerler okunamadı."));
@@ -58,7 +62,7 @@ export function SampleValuesDialog({
     };
     // shared yalnızca açılıştaki başlangıç seçimi için okunur.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, columns, readValues]);
+  }, [open, tables, readValues]);
 
   const toggle = (name: string) =>
     setSelected((s) => {
@@ -70,12 +74,12 @@ export function SampleValuesDialog({
 
   function share() {
     const next: SharedValues = {};
-    for (const p of previews ?? []) if (selected.has(p.name)) next[p.name] = p.values;
+    for (const p of previews ?? []) if (selected.has(p.key)) next[p.key] = p.values;
     onChange(next);
     onClose();
   }
 
-  const selectedCount = previews?.filter((p) => selected.has(p.name)).reduce((n, p) => n + p.values.length, 0) ?? 0;
+  const selectedCount = previews?.filter((p) => selected.has(p.key)).reduce((n, p) => n + p.values.length, 0) ?? 0;
   const active = Object.keys(shared).length > 0;
 
   return (
@@ -124,19 +128,19 @@ export function SampleValuesDialog({
           {previews && previews.length > 0 && (
             <ul className="flex flex-col gap-2">
               {previews.map((p) => {
-                const checked = selected.has(p.name);
+                const checked = selected.has(p.key);
                 return (
-                  <li key={p.name}>
+                  <li key={p.key}>
                     <label
                       className={cn(
                         "flex cursor-pointer items-start gap-3 rounded-lg border bg-card p-3 transition-colors",
                         checked ? "border-outbound/50" : "opacity-70",
                       )}
                     >
-                      <input type="checkbox" checked={checked} onChange={() => toggle(p.name)} className="mt-1 size-4 accent-[var(--outbound)]" />
+                      <input type="checkbox" checked={checked} onChange={() => toggle(p.key)} className="mt-1 size-4 accent-[var(--outbound)]" />
                       <span className="flex min-w-0 flex-col gap-1.5">
                         <span className="font-mono text-[13px]">
-                          {p.name} <span className="text-muted-foreground">· {p.values.length} değer</span>
+                          {p.key} <span className="text-muted-foreground">· {p.values.length} değer</span>
                         </span>
                         <span className="flex flex-wrap gap-1">
                           {p.values.map((v) => (

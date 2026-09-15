@@ -44,9 +44,12 @@ export function AnswerCard({
   onContinue,
   isContext = false,
   parentQuestion,
+  tableNames = [],
 }: {
   turn: Turn;
   datasetName: string;
+  /** Ek tablo adları: yönetici özetinde sunucu SQL'i bu tablolarla doğrular. */
+  tableNames?: string[];
   onStop: () => void;
   onContinue: (id: number) => void;
   isContext?: boolean;
@@ -109,7 +112,7 @@ export function AnswerCard({
       )}
 
       {outcome?.kind === "answer" && (
-        <AnswerBody question={turn.question} answer={outcome} datasetName={datasetName} onContinue={() => onContinue(turn.id)} />
+        <AnswerBody question={turn.question} answer={outcome} datasetName={datasetName} tableNames={tableNames} onContinue={() => onContinue(turn.id)} />
       )}
     </article>
   );
@@ -120,11 +123,13 @@ function AnswerBody({
   answer,
   datasetName,
   onContinue,
+  tableNames,
 }: {
   question: string;
   answer: Answer;
   datasetName: string;
   onContinue: () => void;
+  tableNames: string[];
 }) {
   const chartable = useMemo(() => hasChart(answer.chart, answer.result), [answer]);
   const [view, setView] = useState<"chart" | "table">(chartable ? "chart" : "table");
@@ -202,7 +207,7 @@ function AnswerBody({
         )}
       </div>
 
-      {!empty && <ExecutiveSummary question={question} answer={answer} onDone={onSummary} />}
+      {!empty && <ExecutiveSummary question={question} answer={answer} tableNames={tableNames} onDone={onSummary} />}
       <SqlPeek sql={answer.sql} />
     </>
   );
@@ -309,7 +314,17 @@ type SummaryState =
  * Veri sözleşmesinin tek istisnası: kullanıcı onaylarsa toplu sonuç tablosu modele gider.
  * Onaydan önce gidecek içerik açıkça gösterilir; sunucu ayrıca SQL'in toplulaştırılmış olduğunu doğrular.
  */
-function ExecutiveSummary({ question, answer, onDone }: { question: string; answer: Answer; onDone: (text: string) => void }) {
+function ExecutiveSummary({
+  question,
+  answer,
+  tableNames,
+  onDone,
+}: {
+  question: string;
+  answer: Answer;
+  tableNames: string[];
+  onDone: (text: string) => void;
+}) {
   const [state, setState] = useState<SummaryState>({ status: "idle" });
   const payload = useMemo(() => summaryPayload(answer.result), [answer]);
 
@@ -321,7 +336,7 @@ function ExecutiveSummary({ question, answer, onDone }: { question: string; answ
     if (!payload.ok) return;
     setState({ status: "loading" });
     try {
-      const text = await requestSummary({ question, sql: answer.sql, columns: payload.columns, rows: payload.rows });
+      const text = await requestSummary({ question, sql: answer.sql, columns: payload.columns, rows: payload.rows, tables: tableNames });
       setState({ status: "done", text, rows: payload.rows.length });
       onDone(text);
     } catch (err) {

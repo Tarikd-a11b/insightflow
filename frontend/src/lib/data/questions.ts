@@ -42,6 +42,27 @@ export function rankColumns(columns: ColumnProfile[]): RankedColumns {
 }
 
 /**
+ * Birleştirme gerektiren örnek sorular: ek tablodaki bir kırılımla ana tablodaki ölçü (ör. musteriler.segment bazında
+ * siparişlerin toplam tutarı). Yalnızca tablolar arasında ilişki bulunduysa önerilir.
+ */
+export function suggestJoinQuestions(
+  primary: ColumnProfile[],
+  extras: { table: string; columns: ColumnProfile[] }[],
+  relatedTables: Set<string>,
+  limit = 2,
+): string[] {
+  const [m1] = rankColumns(primary).measures;
+  const out: string[] = [];
+  for (const extra of extras) {
+    if (!relatedTables.has(extra.table)) continue;
+    const [dim] = rankColumns(extra.columns).dims;
+    if (!dim) continue;
+    out.push(m1 ? `${extra.table} tablosundaki ${dim.name} bazında ${sum(m1)} nedir?` : `${extra.table} tablosundaki ${dim.name} bazında kayıt sayısı nedir?`);
+  }
+  return out.slice(0, limit);
+}
+
+/**
  * Şemadan kural tabanlı örnek sorular üretir. LLM çağrısı yapmaz; yalnızca sütun adı,
  * tipi ve yerelde hesaplanan profil kullanılır.
  */

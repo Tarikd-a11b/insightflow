@@ -102,6 +102,60 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
     await expect(await ask(page, "Bir soru daha")).toContainText("3 dakika sonra");
   });
 
+  test("iki tablolu veri seti: ilişki tarayıcıda bulunur, JOIN tarayıcıda çalışır, modele yalnızca şema ve ilişki gider", async ({ page }) => {
+    const api = await mockApi(page);
+    await page.goto("/");
+    await page.getByRole("button", { name: /Siparişler \+ müşteriler/ }).click();
+    await page.getByRole("tab", { name: "Veri önizlemesi" }).waitFor({ timeout: 45_000 });
+
+    // Tablolar ve tarayıcıda hesaplanan ilişki
+    const tables = page.getByRole("listbox", { name: "Şeması gösterilecek tablo" });
+    await expect(tables.getByRole("option")).toHaveCount(2);
+    await expect(page.locator("[data-relationship]")).toContainText("data.musteri_id ↔ musteriler.musteri_id");
+    await expect(page.locator("[data-relationship]")).toContainText("%87 eşleşme");
+    await expect(page.locator("header").first()).toContainText("+1 tablo");
+    await expect(page.locator("[data-ledger]")).toContainText("15.030 satır");
+    await expect(page.getByRole("button", { name: /^musteriler tablosundaki .* bazında toplam tutar nedir\?$/ })).toBeVisible();
+
+    // Birleştirmeli soru: SQL tarayıcıdaki DuckDB'de gerçekten JOIN olarak koşar.
+    api.queue(
+      "/sql",
+      sqlOk(
+        "SELECT m.segment, ROUND(SUM(d.tutar), 2) AS toplam_tutar FROM data d JOIN musteriler m ON d.musteri_id = m.musteri_id GROUP BY 1 ORDER BY 2 DESC",
+        "bar",
+      ),
+    );
+    const card = await ask(page, "Hangi segment en çok harcıyor?");
+    await expect(card.locator("[data-chart] svg")).toBeVisible();
+    await expect(card).toContainText("3 satır");
+    await card.getByRole("tab", { name: "Tablo" }).click();
+    await expect(card.locator("tbody tr").first()).toContainText("Kurumsal");
+
+    const [body] = api.bodies("/sql");
+    expect((body.tables as { name: string; columns: { name: string }[] }[]).map((t) => t.name)).toEqual(["musteriler"]);
+    expect((body.tables as { columns: { name: string }[] }[])[0].columns.map((c) => c.name)).toEqual(["musteri_id", "sehir", "segment", "yas_grubu", "kayit_tarihi"]);
+    expect(body.relationships).toEqual([{ left: "data.musteri_id", right: "musteriler.musteri_id" }]);
+    expect(JSON.stringify(body)).not.toMatch(/Kurumsal|İstanbul|M-0000/);
+    await expect(page.locator("[data-ledger]")).toContainText("11 sütun adı"); // 6 (siparisler) + 5 (musteriler)
+
+    // Tablo seçimi önizlemeyi ve şemayı değiştirir.
+    await tables.getByRole("option", { name: /musteriler/ }).click();
+    await page.getByRole("tab", { name: "Veri önizlemesi" }).click();
+    await expect(page.locator("main")).toContainText("musteriler · ilk 100 / 1.500 satır");
+    await expect(page.locator("section[aria-labelledby=schema-heading]")).toContainText("yas_grubu");
+
+    // Dosya eklenir ve çıkarılır (motor tüm dosyalarla yeniden kurulur, kilit yeniden uygulanır).
+    await page.locator("input[data-add-table]").setInputFiles({
+      name: "Kategori Hedefleri.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from("kategori,hedef\nElektronik,3000000\nGiyim,900000\n", "utf-8"),
+    });
+    await expect(tables.getByRole("option")).toHaveCount(3, { timeout: 45_000 });
+    await expect(tables).toContainText("kategori_hedefleri");
+    await page.getByRole("button", { name: "kategori_hedefleri tablosunu çıkar" }).click();
+    await expect(tables.getByRole("option")).toHaveCount(2, { timeout: 45_000 });
+  });
+
   test("veriyi keşfet tarayıcıda içgörü üretir, modele istek atmaz; içgörüden takip sorusu sorulabilir", async ({ page }, testInfo) => {
     const api = await mockApi(page);
     const apiCalls: string[] = [];
@@ -216,7 +270,8 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
 
   test("uyanırken sorulan soru, sunucu uyanınca kendiliğinden gönderilir", async ({ page }) => {
     // Render ücretsiz planında ilk /health istekleri sunucu uyanana kadar başarısız olur (5 sn arayla).
-    const api = await mockApi(page, { sleepingHealthChecks: 3 });
+    // 6 başarısız yoklama ≈ 25 sn uyku: paralel koşuda demo yüklemesi uzasa da test "uyanıyor" durumunu yakalar.
+    const api = await mockApi(page, { sleepingHealthChecks: 6 });
     api.queue("/sql", sqlOk("SELECT COUNT(*) AS islem_sayisi FROM data", "kpi"));
     await openDemo(page, "Gelir & gider");
     await expect(page.getByRole("status").filter({ hasText: "uyanıyor" })).toBeVisible();
@@ -227,7 +282,7 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
     await expect(card).toContainText("hazır olunca soru gönderilecek");
     expect(api.bodies("/sql")).toHaveLength(0);
 
-    await expect(card.locator("dl")).toContainText("1.068", { timeout: 30_000 });
+    await expect(card.locator("dl")).toContainText("1.068", { timeout: 45_000 });
     expect(api.bodies("/sql")).toHaveLength(1);
     await expect(page.getByRole("status").filter({ hasText: "uyanıyor" })).toHaveCount(0);
   });

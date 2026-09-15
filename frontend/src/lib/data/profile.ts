@@ -29,17 +29,19 @@ export interface SummarizeRow {
   null_percentage: number | null;
 }
 
-export const SUMMARIZE_SQL = `SELECT column_name, column_type, min, max,
+export function summarizeSql(table = "data"): string {
+  return `SELECT column_name, column_type, min, max,
   approx_unique::DOUBLE AS approx_unique, null_percentage::DOUBLE AS null_percentage
-FROM (SUMMARIZE data)`;
+FROM (SUMMARIZE ${quoteIdent(table)})`;
+}
 
 /**
  * SUMMARIZE'ın approx_unique değeri HyperLogLog tahmini; az kategorili sütunlarda bile
  * yanılabiliyor (8 şehir için 9 gibi). Profilde kesin sayıyı göstermek için tek sorguda sayıyoruz.
  */
-export function buildDistinctSql(columnNames: string[]): string {
+export function buildDistinctSql(columnNames: string[], table = "data"): string {
   const parts = columnNames.map((name, i) => `count(DISTINCT ${quoteIdent(name)})::DOUBLE AS c${i}`);
-  return `SELECT ${parts.join(", ")} FROM data`;
+  return `SELECT ${parts.join(", ")} FROM ${quoteIdent(table)}`;
 }
 
 export function buildColumnProfiles(

@@ -93,3 +93,15 @@ def test_summary_payload_limits(client, patch):
     res = c.post("/summary", json={**BODY, **patch})
     assert res.status_code == 422
     assert fake.calls == []
+
+
+def test_join_summary_requires_aggregation_on_every_real_table():
+    ensure_aggregated(
+        "SELECT m.segment, SUM(d.tutar) AS ciro FROM data d JOIN musteriler m ON d.musteri_id = m.musteri_id GROUP BY 1",
+        ["musteriler"],
+    )
+    with pytest.raises(NotAggregatedError):
+        ensure_aggregated("SELECT m.sehir, d.tutar FROM data d JOIN musteriler m ON d.musteri_id = m.musteri_id", ["musteriler"])
+    with pytest.raises(NotAggregatedError):
+        # Ek tablodan ham satırlar UNION koluyla sızdırılamaz.
+        ensure_aggregated("SELECT 'x', COUNT(*) FROM data UNION ALL SELECT sehir, 1 FROM musteriler", ["musteriler"])

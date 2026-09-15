@@ -1,4 +1,4 @@
-import { requestRepair, requestSql, type ChartKind, type ColumnPayload, type HistoryItem, type SqlResponse } from "./api";
+import { requestRepair, requestSql, type ChartKind, type HistoryItem, type SchemaPayload, type SqlResponse } from "./api";
 import type { QueryResult } from "./data/types";
 import { sanitizeError } from "./sanitize";
 
@@ -31,14 +31,14 @@ interface Runner {
 export async function ask(
   engine: Runner,
   question: string,
-  columns: ColumnPayload[],
+  schema: SchemaPayload,
   onStep: (step: AskStep) => void,
   signal?: AbortSignal,
   history: HistoryItem[] = [],
 ): Promise<AskOutcome> {
   const started = performance.now();
   onStep({ kind: "writing" });
-  let response: SqlResponse = await requestSql(question, columns, signal, history);
+  let response: SqlResponse = await requestSql(question, schema, signal, history);
 
   for (let repairs = 0; ; repairs++) {
     if (response.status === "unanswerable") return { kind: "unanswerable", reason: response.reason };
@@ -67,7 +67,7 @@ export async function ask(
       }
       onStep({ kind: "repairing", attempt: repairs + 1 });
       response = await requestRepair(
-        { question, columns, sql: response.sql, error: sanitizeError(raw), attempt: repairs + 1, history },
+        { question, schema, sql: response.sql, error: sanitizeError(raw), attempt: repairs + 1, history },
         signal,
       );
     }

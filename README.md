@@ -78,6 +78,17 @@ Ayrıntılar ve yöntem: [`docs/benchmark/README.md`](docs/benchmark/README.md).
   - En fazla 20 satır × 8 sütun gönderilir.
   - Sunucu, sonucu üreten SQL'in toplulaştırılmış olduğunu yeniden doğrular (`summary.py`). `data`'yı okuyan her SELECT GROUP BY veya toplama fonksiyonu içermeli; pencere fonksiyonu ve alt sorgudaki COUNT sayılmaz.
 
+## Birden fazla dosya ve birleştirme (JOIN)
+
+- İlk dosya `data` tablosu olur; birlikte seçilen ya da sonradan **Dosya ekle** ile eklenen dosyalar adlarından türetilen tablolar olur (`Müşteri Listesi.xlsx` → `musteri_listesi`, `src/lib/data/tables.ts`). En fazla 4 ek tablo var.
+- **İlişkiler tarayıcıda bulunur:** aynı adlı, uyumlu tipli anahtar sütunlar için DuckDB'de eşleşme oranı hesaplanır (ör. `data.musteri_id ↔ musteriler.musteri_id · %87 eşleşme`). Modele yalnızca `tablo.sütun` çiftleri gider; oran ve değer gitmez.
+- **Kilit korunur:** motor dış erişime kilitli olduğu için dosya eklemek/çıkarmak yeni bir DuckDB örneğini tüm dosyalarla yeniden kurar. Eklenen dosya okunamazsa önceki veri seti çalışmaya devam eder.
+- **Backend:** istek şeması `tables` ve `relationships` alır. Tablo adları `^[a-z][a-z0-9_]{0,39}$`, `data` olamaz, benzersizdir; ilişkiler yalnızca bilinen tablo ve sütunlara işaret edebilir.
+  - Doğrulayıcının tablo izin listesi yalnızca bildirilen tablolara genişler.
+  - Yönetici özetinin toplulaştırma kuralı her gerçek tabloya uygulanır: JOIN veya UNION ile ham satır sızdırılamaz.
+- **Arayüz:** tablolar ve ilişkiler paneli, tabloya göre şema ve önizleme, birleştirme gerektiren öneri soruları, iki tablolu demo (**Siparişler + müşteriler**).
+- **Değerlendirme** (`scripts/eval_join.py`): gerçek modelle 5 sorunun 5'i doğru tablo kullanımıyla ilk denemede çalıştı. Buna `LEFT JOIN … IS NULL` ile "müşteri kaydı olmayan siparişler" de dahil. Tek tabloyla yanıtlanabilen soruda gereksiz JOIN yapılmadı.
+
 ## Veriyi keşfet
 
 - **Veriyi keşfet** butonu (`src/lib/explore.ts`), soru sormadan hazır içgörüler üretir; **model çağrısı yapmaz**, sorgular tarayıcıda koşar, cümleler sonuçlardan kural tabanlı ve basit istatistikle kurulur.
@@ -111,10 +122,10 @@ Ayrıntılar ve yöntem: [`docs/benchmark/README.md`](docs/benchmark/README.md).
 
 | Katman | Komut | Kapsam |
 | --- | --- | --- |
-| Backend | `uv run pytest` | 116 test: doğrulayıcı saldırı korpusu, API, özet toplulaştırma kuralı, örnek değer ve takip geçmişi sınırları, hata temizleme, istek sınırı |
-| Frontend birim | `npm test` | 62 test: grafik seçici, profil, öneri soruları, keşif cümleleri ve plan seçimi, örnek değer adayları, takip bağlamı zinciri, onarım döngüsü, giden istek kaydı, pano deposu (özet güncelleme dahil), backend uyanma izleyicisi |
-| Uçtan uca | `npm run test:e2e` | 16 senaryo, gerçek Chromium + gerçek DuckDB-WASM (backend taklit edilir): dış istek yok, API aynı alan adından, veri sızıntısı yok, model çağrısız keşif, takip soruları, onaylı örnek değerler, motor kilidi, onarım, özet onayı, pano kalıcılığı, PDF rapor indirme, durdurma, uyuyan sunucu, mobil |
-| Model | `uv run python scripts/eval_llm.py` | Gerçek Gemini ile 3 veri setinde 16 soru; SQL gerçek DuckDB'de çalıştırılır (`--with-values`: onaylı örnek değerlerle) |
+| Backend | `uv run pytest` | 130 test: doğrulayıcı saldırı korpusu, ek tablolarla JOIN ve izin listesi, API ve tablo/ilişki doğrulaması, özet toplulaştırma kuralı (JOIN/UNION dahil), örnek değer ve takip geçmişi sınırları, hata temizleme, istek sınırı |
+| Frontend birim | `npm test` | 72 test: grafik seçici, profil, öneri soruları, tablo adı ve ilişki adayları, keşif cümleleri ve plan seçimi, örnek değer adayları, takip bağlamı zinciri, onarım döngüsü, giden istek kaydı, pano deposu (özet güncelleme dahil), backend uyanma izleyicisi |
+| Uçtan uca | `npm run test:e2e` | 17 senaryo, gerçek Chromium + gerçek DuckDB-WASM (backend taklit edilir): dış istek yok, API aynı alan adından, veri sızıntısı yok, iki tablolu JOIN ve dosya ekleme/çıkarma, model çağrısız keşif, takip soruları, onaylı örnek değerler, motor kilidi, onarım, özet onayı, pano kalıcılığı, PDF rapor indirme, durdurma, uyuyan sunucu, mobil |
+| Model | `uv run python scripts/eval_llm.py` | Gerçek Gemini ile 3 veri setinde 16 soru; SQL gerçek DuckDB'de çalıştırılır (`--with-values`: onaylı örnek değerlerle). Ayrıca `eval_followup.py` (takip) ve `eval_join.py` (çok tablo) |
 
 Son model değerlendirmesi (15.09.2026, gemini-3.5-flash-lite, 16 soru): **14 doğru sonuç, 1 doğru red** ("yarın dolar kaç olacak"), **1 yanlış red** ("aylık net kâr"), 0 çalışmayan SQL.
 

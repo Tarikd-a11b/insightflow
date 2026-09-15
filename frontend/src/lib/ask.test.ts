@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ask, MAX_REPAIRS } from "./ask";
 
-const columns = [{ name: "sehir", type: "VARCHAR" }];
+const columns = { columns: [{ name: "sehir", type: "VARCHAR" }] };
 const okResult = { columns: ["n"], rows: [{ n: 1 }], ms: 3 };
 
 function mockFetch(...bodies: unknown[]) {

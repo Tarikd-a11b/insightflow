@@ -20,8 +20,33 @@ export interface ColumnPayload {
   values?: string[];
 }
 
-export function toColumnPayload(columns: ColumnProfile[], shared: Record<string, string[]> = {}): ColumnPayload[] {
-  return columns.map((c) => (shared[c.name]?.length ? { name: c.name, type: c.type, values: shared[c.name] } : { name: c.name, type: c.type }));
+/** `keyPrefix`: ek tablolarda paylaşılan değerlerin anahtarı `tablo.sütun` biçimindedir. */
+export function toColumnPayload(columns: ColumnProfile[], shared: Record<string, string[]> = {}, keyPrefix = ""): ColumnPayload[] {
+  return columns.map((c) => {
+    const values = shared[keyPrefix + c.name];
+    return values?.length ? { name: c.name, type: c.type, values } : { name: c.name, type: c.type };
+  });
+}
+
+export interface TablePayload {
+  name: string;
+  columns: ColumnPayload[];
+}
+
+/** Modele giden şemanın tamamı: ana tablo `data`nın sütunları, varsa ek tablolar ve eşleşen sütun çiftleri. */
+export interface SchemaPayload {
+  columns: ColumnPayload[];
+  tables?: TablePayload[];
+  relationships?: { left: string; right: string }[];
+}
+
+/** Boş alanlar gövdeye hiç yazılmaz: tek tablolu sorularda istek önceki hâliyle birebir aynı kalır. */
+function schemaBody(schema: SchemaPayload): Record<string, unknown> {
+  return {
+    columns: schema.columns,
+    ...(schema.tables?.length ? { tables: schema.tables } : {}),
+    ...(schema.relationships?.length ? { relationships: schema.relationships } : {}),
+  };
 }
 
 export class ApiError extends Error {
@@ -66,17 +91,21 @@ export interface HistoryItem {
   sql: string;
 }
 
-export function requestSql(question: string, columns: ColumnPayload[], signal?: AbortSignal, history: HistoryItem[] = []) {
-  // Geçmiş yoksa alan hiç gönderilmez; bağımsız soruların gövdesi önceki hâliyle birebir aynı kalır.
-  return postJson<SqlResponse>("sql", "/sql", { question, columns, ...(history.length ? { history } : {}) }, signal);
+export function requestSql(question: string, schema: SchemaPayload, signal?: AbortSignal, history: HistoryItem[] = []) {
+  return postJson<SqlResponse>("sql", "/sql", { question, ...schemaBody(schema), ...(history.length ? { history } : {}) }, signal);
 }
 
 export function requestRepair(
-  args: { question: string; columns: ColumnPayload[]; sql: string; error: string; attempt: number; history?: HistoryItem[] },
+  args: { question: string; schema: SchemaPayload; sql: string; error: string; attempt: number; history?: HistoryItem[] },
   signal?: AbortSignal,
 ) {
-  const { history, ...rest } = args;
-  return postJson<SqlResponse>("repair", "/repair", { ...rest, ...(history?.length ? { history } : {}) }, signal);
+  const { schema, history, ...rest } = args;
+  return postJson<SqlResponse>(
+    "repair",
+    "/repair",
+    { question: rest.question, ...schemaBody(schema), sql: rest.sql, error: rest.error, attempt: rest.attempt, ...(history?.length ? { history } : {}) },
+    signal,
+  );
 }
 
 export const SUMMARY_MAX_ROWS = 20;
@@ -87,8 +116,11 @@ export async function requestSummary(args: {
   sql: string;
   columns: string[];
   rows: (string | number | boolean | null)[][];
+  /** Sonucu üreten SQL'in okuyabileceği ek tablolar (sunucudaki toplulaştırma doğrulaması için). */
+  tables?: string[];
 }): Promise<string> {
-  const data = await postJson<{ summary: string }>("summary", "/summary", args);
+  const { tables, ...rest } = args;
+  const data = await postJson<{ summary: string }>("summary", "/summary", { ...rest, ...(tables?.length ? { tables } : {}) });
   return String(data.summary);
 }
 

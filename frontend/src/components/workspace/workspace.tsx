@@ -2,9 +2,10 @@
 
 import { ArrowLeft, ArrowUp, Compass, CornerDownRight, Loader2, RefreshCw, Square, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, checkHealth, toColumnPayload, type ColumnPayload, type HistoryItem } from "@/lib/api";
+import { ApiError, checkHealth, toColumnPayload, type HistoryItem, type SchemaPayload } from "@/lib/api";
 import { ask } from "@/lib/ask";
-import { suggestQuestions } from "@/lib/data/questions";
+import { suggestJoinQuestions, suggestQuestions } from "@/lib/data/questions";
+import { PRIMARY_TABLE, relationshipPayload } from "@/lib/data/tables";
 import { countSharedValues, MAX_SHARED_VALUES, type SharedValues } from "@/lib/data/sample-values";
 import { runExplore } from "@/lib/explore";
 import { buildHistory, latestAnsweredId, type ContextTurn } from "@/lib/followup";
@@ -20,6 +21,7 @@ import { Pinboard } from "./pinboard";
 import { PreviewTable } from "./preview-table";
 import { PrivacyLedger } from "./privacy-ledger";
 import { SampleValuesDialog } from "./sample-values-dialog";
+import { TablesPanel } from "./tables-panel";
 import { SchemaPanel } from "./schema-panel";
 import { ThemeToggle } from "./theme-toggle";
 import { useDataset } from "./use-dataset";
@@ -34,7 +36,7 @@ const HEALTH_MESSAGE: Record<"unreachable" | "unconfigured", string> = {
 };
 
 export function Workspace() {
-  const { state, load, reset, engine } = useDataset();
+  const { state, load, addFiles, removeTable, reset, engine } = useDataset();
   const ready = state.status === "ready" ? state : null;
   const [question, setQuestion] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -47,26 +49,38 @@ export function Workspace() {
   const [health, setHealth] = useState<HealthState>("checking");
   const [contextChoice, setContextChoice] = useState<ContextChoice>({ mode: "auto" });
   const [exploring, setExploring] = useState(false);
+  // Şema panelinde ve önizlemede gösterilen tablo.
+  const [selectedTable, setSelectedTable] = useState(PRIMARY_TABLE);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const nextId = useRef(1);
   const stopHealthRef = useRef<(() => void) | null>(null);
   // Sunucu uyanırken sorulan soru burada bekler; sağlık durumu "ok" olunca gönderilir.
-  const pendingRef = useRef<{ id: number; question: string; columns: ColumnPayload[]; history: HistoryItem[] } | null>(null);
+  const pendingRef = useRef<{ id: number; question: string; schema: SchemaPayload; history: HistoryItem[] } | null>(null);
   const healthRef = useRef<HealthState>("checking");
   const onHealthRef = useRef<(state: HealthState) => void>(() => {});
 
   const sharedCount = countSharedValues(sharedValues);
   const readValues = useCallback(
-    (column: string) => engine.current?.distinctValues(column, MAX_SHARED_VALUES) ?? Promise.resolve([]),
+    (table: string, column: string) => engine.current?.distinctValues(table, column, MAX_SHARED_VALUES) ?? Promise.resolve([]),
     [engine],
   );
 
   const log = useOutboundLog();
   const sent = useMemo(() => totals(log), [log]);
   const { pins, unavailable: pinsUnavailable } = usePins();
-  const suggestions = useMemo(() => (ready ? suggestQuestions(ready.profile.columns) : []), [ready]);
+  const extraTables = useMemo(() => (ready ? ready.tables.filter((t) => t.table !== PRIMARY_TABLE) : []), [ready]);
+  const suggestions = useMemo(() => {
+    if (!ready) return [];
+    const related = new Set(ready.relationships.flatMap((r) => [r.left.table, r.right.table]));
+    const join = suggestJoinQuestions(ready.profile.columns, extraTables, related);
+    return [...join, ...suggestQuestions(ready.profile.columns, 6 - join.length)];
+  }, [ready, extraTables]);
+  const totalRows = ready ? ready.tables.reduce((n, t) => n + t.rowCount, 0) : null;
+  const totalColumns = ready ? ready.tables.reduce((n, t) => n + t.columns.length, 0) : 0;
+  const shownTable = ready?.tables.find((t) => t.table === selectedTable) ?? ready?.profile;
+  const datasetLabel = ready ? ready.profile.name + (extraTables.length ? ` + ${extraTables.map((t) => t.table).join(", ")}` : "") : "";
   const busy = turns.some((t) => t.outcome === null);
   const contextTurns: ContextTurn[] = useMemo(
     () => turns.map((t) => ({ id: t.id, question: t.question, parentId: t.parentId, sql: t.outcome?.kind === "answer" ? t.outcome.sql : undefined })),
@@ -99,7 +113,7 @@ export function Workspace() {
       if (!pending) return;
       if (state === "ok") {
         pendingRef.current = null;
-        void runTurn(pending.id, pending.question, pending.columns, pending.history);
+        void runTurn(pending.id, pending.question, pending.schema, pending.history);
       } else if (state === "unreachable" || state === "unconfigured") {
         pendingRef.current = null;
         updateTurn(pending.id, {
@@ -130,6 +144,7 @@ export function Workspace() {
     outboundLog.clear();
     setSharedValues({});
     setContextChoice({ mode: "auto" });
+    setSelectedTable(PRIMARY_TABLE);
     void reset();
   }
 
@@ -143,7 +158,7 @@ export function Workspace() {
     abortRef.current?.abort();
   }
 
-  async function runTurn(id: number, q: string, columns: ColumnPayload[], history: HistoryItem[]) {
+  async function runTurn(id: number, q: string, schema: SchemaPayload, history: HistoryItem[]) {
     const current = engine.current;
     if (!current) {
       updateTurn(id, { step: null, outcome: { kind: "failed", message: "Veri seti kapatıldığı için soru gönderilmedi." } });
@@ -153,7 +168,7 @@ export function Workspace() {
     abortRef.current = controller;
     updateTurn(id, { step: { kind: "writing" } });
     try {
-      const outcome = await ask(current, q, columns, (step) => updateTurn(id, { step }), controller.signal, history);
+      const outcome = await ask(current, q, schema, (step) => updateTurn(id, { step }), controller.signal, history);
       updateTurn(id, { outcome, step: null });
     } catch (err) {
       const aborted = err instanceof DOMException && err.name === "AbortError";
@@ -170,7 +185,12 @@ export function Workspace() {
     if (q.length < 2 || busy || !ready || !engine.current || inputLocked) return;
 
     const id = nextId.current++;
-    const columns = toColumnPayload(ready.profile.columns, sharedValues);
+    // Modele giden şema: ana tablo + ek tablolar (sütun adı/tipi, onaylı örnek değerler) + eşleşen sütun çiftleri.
+    const schema: SchemaPayload = {
+      columns: toColumnPayload(ready.profile.columns, sharedValues),
+      tables: extraTables.map((t) => ({ name: t.table, columns: toColumnPayload(t.columns, sharedValues, `${t.table}.`) })),
+      relationships: relationshipPayload(ready.relationships),
+    };
     const waking = healthRef.current === "waking";
     const history = buildHistory(contextTurns, contextId);
     const parentId = history.length ? (contextId ?? undefined) : undefined;
@@ -181,10 +201,10 @@ export function Workspace() {
     setContextChoice({ mode: "auto" });
 
     if (waking) {
-      pendingRef.current = { id, question: q, columns, history };
+      pendingRef.current = { id, question: q, schema, history };
       return;
     }
-    void runTurn(id, q, columns, history);
+    void runTurn(id, q, schema, history);
   }
 
   /** Otomatik keşif: tarayıcıda kural tabanlı içgörüler, model çağrısı yok (bkz. lib/explore.ts). */
@@ -232,8 +252,11 @@ export function Workspace() {
       {ready && (
         <span className="flex min-w-0 items-center gap-1.5 rounded-md border bg-card py-1 pr-1 pl-2.5 text-sm">
           <span className="truncate font-medium">{ready.profile.name}</span>
+          {extraTables.length > 0 && (
+            <span className="shrink-0 rounded bg-local-soft px-1.5 py-0.5 text-[11px] font-medium text-local">+{extraTables.length} tablo</span>
+          )}
           <span className="hidden font-mono text-xs text-muted-foreground sm:inline">
-            {formatInt(ready.profile.columns.length)} sütun · {formatBytes(ready.sizeBytes)} · {formatInt(ready.profile.loadMs)} ms
+            {formatInt(totalColumns)} sütun · {formatBytes(ready.sizeBytes)} · {formatInt(ready.profile.loadMs)} ms
           </span>
           <button
             type="button"
@@ -246,14 +269,14 @@ export function Workspace() {
         </span>
       )}
       <div className="ml-auto flex items-center gap-2">
-        <PrivacyLedger rowCount={ready?.profile.rowCount ?? null} sent={sent} onOpen={() => setPanelOpen(true)} />
+        <PrivacyLedger rowCount={totalRows} sent={sent} onOpen={() => setPanelOpen(true)} />
         <ThemeToggle />
       </div>
     </header>
   );
 
   const panel = (
-    <OutboundPanel open={panelOpen} onClose={() => setPanelOpen(false)} entries={log} rowCount={ready?.profile.rowCount ?? null} />
+    <OutboundPanel open={panelOpen} onClose={() => setPanelOpen(false)} entries={log} rowCount={totalRows} />
   );
 
   if (!ready) {
@@ -278,7 +301,7 @@ export function Workspace() {
             </div>
           ) : (
             <DatasetPicker
-              onFile={(f, name) => void load(f, name)}
+              onFiles={(entries) => void load(entries)}
               loadingName={state.status === "loading" ? state.name : null}
               error={state.status === "error" ? state.message : null}
               pinCount={pins?.length ?? 0}
@@ -333,7 +356,22 @@ export function Workspace() {
               ))}
             </ul>
           </section>
-          <SchemaPanel profile={ready.profile} />
+          <TablesPanel
+            tables={ready.tables}
+            relationships={ready.relationships}
+            selected={shownTable?.table ?? PRIMARY_TABLE}
+            onSelect={setSelectedTable}
+            onAddFiles={(files) => void addFiles(files)}
+            onRemove={(table) => {
+              if (selectedTable === table) setSelectedTable(PRIMARY_TABLE);
+              // Çıkarılan tablonun paylaşılan örnek değerleri de düşer.
+              setSharedValues((s) => Object.fromEntries(Object.entries(s).filter(([k]) => !k.startsWith(`${table}.`))));
+              void removeTable(table);
+            }}
+            reloading={ready.reloading}
+            error={ready.addError}
+          />
+          <SchemaPanel profile={shownTable ?? ready.profile} />
         </aside>
 
         <main className="flex min-h-[75vh] min-w-0 flex-1 flex-col gap-3 p-4 lg:min-h-0">
@@ -357,12 +395,20 @@ export function Workspace() {
             </div>
             {view === "preview" && (
               <span className="hidden font-mono text-xs text-muted-foreground sm:inline">
-                ilk {formatInt(ready.preview.rows.length)} / {formatInt(ready.profile.rowCount)} satır
+                {shownTable?.table} · ilk {formatInt((ready.previews[shownTable?.table ?? PRIMARY_TABLE] ?? ready.preview).rows.length)} /{" "}
+                {formatInt(shownTable?.rowCount ?? ready.profile.rowCount)} satır
               </span>
             )}
           </div>
 
-          {view === "preview" && <PreviewTable result={ready.preview} columns={ready.profile.columns} className="flex-1" />}
+          {view === "preview" && (
+            <PreviewTable
+              key={shownTable?.table}
+              result={ready.previews[shownTable?.table ?? PRIMARY_TABLE] ?? ready.preview}
+              columns={(shownTable ?? ready.profile).columns}
+              className="flex-1"
+            />
+          )}
 
           {view === "board" && (
             <div className="min-h-0 flex-1 overflow-y-auto pr-1">
@@ -396,7 +442,8 @@ export function Workspace() {
                     <AnswerCard
                       key={t.id}
                       turn={t}
-                      datasetName={ready.profile.name}
+                      datasetName={datasetLabel}
+                      tableNames={extraTables.map((t) => t.table)}
                       onStop={stop}
                       onContinue={continueFrom}
                       isContext={t.id === contextId}
@@ -490,7 +537,8 @@ export function Workspace() {
             <div className="flex items-center justify-between gap-2 px-1">
               <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                 <span>
-                  Modele <span className="text-outbound">{ready.profile.columns.length} sütunun adı ve tipi</span>
+                  Modele <span className="text-outbound">{totalColumns} sütunun adı ve tipi</span>
+                  {extraTables.length > 0 && ready.relationships.length > 0 && <> ve tablo ilişkileri</>}
                   {sharedCount > 0 && (
                     <>
                       {" "}+ <span className="text-outbound">{sharedCount} örnek değer</span>
@@ -532,7 +580,7 @@ export function Workspace() {
       <SampleValuesDialog
         open={valuesDialogOpen}
         onClose={() => setValuesDialogOpen(false)}
-        columns={ready.profile.columns}
+        tables={ready.tables}
         shared={sharedValues}
         onChange={setSharedValues}
         readValues={readValues}

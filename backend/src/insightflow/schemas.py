@@ -1,6 +1,6 @@
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, StringConstraints, field_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 ChartKind = Literal["line", "bar", "scatter", "kpi", "table"]
 
@@ -51,16 +51,60 @@ MAX_HISTORY = 3
 History = Annotated[list[HistoryItem], Field(max_length=MAX_HISTORY)]
 
 
-class SqlRequest(BaseModel):
+MAX_EXTRA_TABLES = 4
+MAX_RELATIONSHIPS = 12
+PRIMARY_TABLE = "data"
+TableName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,39}$")]
+ColumnRef = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,39}\.[^.\x00-\x1f]{1,128}$")]
+
+
+class TableSchema(BaseModel):
+    """Kullanıcının eklediği ek tablo: ad ve sütunlar (ana tablo her zaman `data`)."""
+
+    name: TableName
+    columns: Columns
+
+    @field_validator("name")
+    @classmethod
+    def not_primary(cls, v: str) -> str:
+        if v == PRIMARY_TABLE:
+            raise ValueError("Ek tablo `data` adını alamaz.")
+        return v
+
+
+class Relationship(BaseModel):
+    """Tarayıcıda bulunan birleştirme önerisi: iki tablodaki eşleşen sütunlar (`tablo.sütun`). Değer taşımaz."""
+
+    left: ColumnRef
+    right: ColumnRef
+
+
+class QueryPayload(BaseModel):
     question: Question
     columns: Columns
     history: History = []
+    tables: Annotated[list[TableSchema], Field(max_length=MAX_EXTRA_TABLES)] = []
+    relationships: Annotated[list[Relationship], Field(max_length=MAX_RELATIONSHIPS)] = []
+
+    @model_validator(mode="after")
+    def consistent_tables(self) -> "QueryPayload":
+        names = [t.name for t in self.tables]
+        if len(set(names)) != len(names):
+            raise ValueError("Tablo adları benzersiz olmalı.")
+        known = {PRIMARY_TABLE: {c.name for c in self.columns}} | {t.name: {c.name for c in t.columns} for t in self.tables}
+        for rel in self.relationships:
+            for ref in (rel.left, rel.right):
+                table, column = ref.split(".", 1)
+                if column not in known.get(table, set()):
+                    raise ValueError(f"İlişki bilinmeyen bir tablo veya sütuna işaret ediyor: {ref}")
+        return self
 
 
-class RepairRequest(BaseModel):
-    question: Question
-    columns: Columns
-    history: History = []
+class SqlRequest(QueryPayload):
+    pass
+
+
+class RepairRequest(QueryPayload):
     sql: Annotated[str, StringConstraints(min_length=1, max_length=4000)]
     error: Annotated[str, StringConstraints(min_length=1, max_length=2000)]
     attempt: Annotated[int, Field(ge=1, le=3)]
@@ -87,6 +131,8 @@ class SummaryRequest(BaseModel):
     sql: Annotated[str, StringConstraints(min_length=1, max_length=4000)]
     columns: Annotated[list[Annotated[str, StringConstraints(min_length=1, max_length=128)]], Field(min_length=1, max_length=8)]
     rows: Annotated[list[list[Cell]], Field(min_length=1, max_length=20)]
+    # Sonucu üreten SQL'in okuyabileceği ek tablolar (doğrulama için).
+    tables: Annotated[list[TableName], Field(max_length=MAX_EXTRA_TABLES)] = []
 
     @field_validator("rows")
     @classmethod

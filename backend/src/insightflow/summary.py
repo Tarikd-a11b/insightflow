@@ -7,6 +7,8 @@ burada yeniden doğrulanır ve GROUP BY ya da toplama fonksiyonu içermiyorsa is
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import sqlglot
 from sqlglot import exp
 
@@ -20,18 +22,20 @@ class NotAggregatedError(ValueError):
     pass
 
 
-def ensure_aggregated(sql: str) -> None:
+def ensure_aggregated(sql: str, extra_tables: Iterable[str] = ()) -> None:
     """SQL güvenli olmalı ve sonucu satır düzeyinde değil özet düzeyinde olmalı."""
     try:
-        validated = validate_sql(sql)
+        validated = validate_sql(sql, extra_tables)
     except UnsafeSqlError as err:
         raise NotAggregatedError(f"SQL doğrulanamadı: {err}") from err
 
     root = sqlglot.parse_one(validated.sql, read="duckdb")
-    # Kural: `data` tablosunu okuyan her SELECT toplama yapmalı. Böylece ham satırlar ne doğrudan ne de
-    # bir alt sorgu/UNION kolu üzerinden sonuca taşınabilir; CTE içinde toplayıp dışarıda seçmek serbesttir.
+    # Kural: gerçek bir tabloyu (data veya ek tablolar) okuyan her SELECT toplama yapmalı. Böylece ham satırlar
+    # ne doğrudan ne de bir alt sorgu/UNION kolu/JOIN üzerinden sonuca taşınabilir; CTE içinde toplayıp dışarıda
+    # seçmek serbesttir.
+    cte_names = {cte.alias_or_name.lower() for cte in root.find_all(exp.CTE)}
     for table in root.find_all(exp.Table):
-        if table.name.lower() != "data":
+        if table.name.lower() in cte_names:
             continue
         select = table.find_ancestor(exp.Select)
         if select is None or not _is_aggregating(select):

@@ -2,18 +2,20 @@
 
 import { ArrowUpRight, FileUp, LayoutGrid, Loader2 } from "lucide-react";
 import { useRef, useState } from "react";
-import { DEMO_DATASETS, fetchDemoFile, type DemoDataset } from "@/lib/demo";
+import { DEMO_DATASETS, fetchDemoFiles, type DemoDataset } from "@/lib/demo";
+import type { FileEntry } from "./use-dataset";
 import { cn } from "@/lib/utils";
 
 interface Props {
-  onFile: (file: File, displayName?: string) => void;
+  /** İlk dosya ana tablo olur; birden fazla dosya seçilirse diğerleri ek tablolar olarak yüklenir. */
+  onFiles: (entries: FileEntry[]) => void;
   loadingName: string | null;
   error: string | null;
   pinCount: number;
   onOpenBoard: () => void;
 }
 
-export function DatasetPicker({ onFile, loadingName, error, pinCount, onOpenBoard }: Props) {
+export function DatasetPicker({ onFiles, loadingName, error, pinCount, onOpenBoard }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [demoError, setDemoError] = useState<string | null>(null);
@@ -22,7 +24,8 @@ export function DatasetPicker({ onFile, loadingName, error, pinCount, onOpenBoar
   async function openDemo(demo: DemoDataset) {
     setDemoError(null);
     try {
-      onFile(await fetchDemoFile(demo), demo.title);
+      const files = await fetchDemoFiles(demo);
+      onFiles(files.map((file, i) => ({ file, displayName: i === 0 ? demo.title : undefined })));
     } catch (e) {
       setDemoError(e instanceof Error ? e.message : String(e));
     }
@@ -53,8 +56,8 @@ export function DatasetPicker({ onFile, loadingName, error, pinCount, onOpenBoar
         onDrop={(e) => {
           e.preventDefault();
           setDragging(false);
-          const file = e.dataTransfer.files[0];
-          if (file && !busy) onFile(file);
+          const files = [...e.dataTransfer.files];
+          if (files.length && !busy) onFiles(files.map((file) => ({ file })));
         }}
         className={cn(
           "relative flex flex-col items-center gap-3 rounded-xl border-2 border-dashed bg-card px-6 py-12 text-center transition-colors",
@@ -73,7 +76,7 @@ export function DatasetPicker({ onFile, loadingName, error, pinCount, onOpenBoar
           <>
             <FileUp className="size-7 text-local" aria-hidden />
             <p className="font-medium">Dosyanı buraya sürükle</p>
-            <p className="text-sm text-muted-foreground">CSV, Parquet veya Excel (.xlsx)</p>
+            <p className="text-sm text-muted-foreground">CSV, Parquet veya Excel (.xlsx) · birden fazla dosya birleştirilebilir</p>
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
@@ -86,12 +89,13 @@ export function DatasetPicker({ onFile, loadingName, error, pinCount, onOpenBoar
         <input
           ref={inputRef}
           type="file"
+          multiple
           accept=".csv,.tsv,.txt,.parquet,.xlsx,.xls"
           className="sr-only"
           tabIndex={-1}
           onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) onFile(file);
+            const files = [...(e.target.files ?? [])];
+            if (files.length) onFiles(files.map((file) => ({ file })));
             e.target.value = "";
           }}
         />
@@ -107,7 +111,7 @@ export function DatasetPicker({ onFile, loadingName, error, pinCount, onOpenBoar
         <h2 id="demo-heading" className="text-sm font-medium text-muted-foreground">
           Dosyan yoksa hazır bir veri setiyle dene
         </h2>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2">
           {DEMO_DATASETS.map((demo) => (
             <button
               key={demo.id}
@@ -116,8 +120,13 @@ export function DatasetPicker({ onFile, loadingName, error, pinCount, onOpenBoar
               onClick={() => openDemo(demo)}
               className="group flex flex-col gap-2 rounded-lg border bg-card p-4 text-left transition-colors hover:border-foreground/30 disabled:opacity-50"
             >
-              <span className="flex items-center justify-between font-heading text-base font-medium">
-                {demo.title}
+              <span className="flex items-center justify-between gap-2 font-heading text-base font-medium">
+                <span className="flex items-center gap-2">
+                  {demo.title}
+                  {demo.badge && (
+                    <span className="rounded bg-local-soft px-1.5 py-0.5 font-sans text-[11px] font-medium text-local">{demo.badge}</span>
+                  )}
+                </span>
                 <ArrowUpRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
               </span>
               <span className="text-sm text-muted-foreground">{demo.description}</span>

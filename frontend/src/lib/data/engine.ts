@@ -2,12 +2,19 @@
 
 import * as duckdb from "@duckdb/duckdb-wasm";
 import { Type, type Table } from "apache-arrow";
-import { SUMMARIZE_SQL, buildColumnProfiles, buildDistinctSql, quoteIdent, type SummarizeRow } from "./profile";
-import type { DatasetProfile, QueryResult } from "./types";
+import { buildColumnProfiles, buildDistinctSql, quoteIdent, summarizeSql, type SummarizeRow } from "./profile";
+import type { QueryResult, TableProfile } from "./types";
+
+export interface TableInput {
+  file: File;
+  /** SQL tablo adı (ilk tablo her zaman `data`). */
+  table: string;
+  displayName: string;
+}
 
 /**
- * Tarayıcı içi veri motoru. Her veri seti kendi DuckDB örneğinde yaşar:
- * dosya `data` tablosuna alınır, ardından motor dış erişime kilitlenir.
+ * Tarayıcı içi veri motoru. Her veri seti kendi DuckDB örneğinde yaşar: dosyalar tablolara alınır (ilki `data`),
+ * ardından motor dış erişime kilitlenir.
  * Hiçbir satır sunucuya gönderilmez.
  */
 
@@ -26,19 +33,19 @@ export function detectFormat(fileName: string): SourceFormat | null {
   return null;
 }
 
-async function toDuckDbInput(file: File, format: SourceFormat): Promise<{ name: string; bytes: Uint8Array; reader: string }> {
+async function toDuckDbInput(file: File, format: SourceFormat, index: number): Promise<{ name: string; bytes: Uint8Array; reader: string }> {
   if (format === "excel") {
     // Excel'i önce yerelde CSV'ye çeviriyoruz; DuckDB'nin excel eklentisi ağdan indirilmek zorunda.
     const XLSX = await import("xlsx");
     const wb = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
     const sheet = wb.Sheets[wb.SheetNames[0]];
     const csv = XLSX.utils.sheet_to_csv(sheet, { dateNF: "yyyy-mm-dd" });
-    return { name: "upload.csv", bytes: new TextEncoder().encode(csv), reader: "read_csv_auto" };
+    return { name: `upload_${index}.csv`, bytes: new TextEncoder().encode(csv), reader: "read_csv_auto" };
   }
   const bytes = new Uint8Array(await file.arrayBuffer());
   return format === "parquet"
-    ? { name: "upload.parquet", bytes, reader: "read_parquet" }
-    : { name: "upload.csv", bytes, reader: "read_csv_auto" };
+    ? { name: `upload_${index}.parquet`, bytes, reader: "read_parquet" }
+    : { name: `upload_${index}.csv`, bytes, reader: "read_csv_auto" };
 }
 
 /** Türkçe bölge ayarlı Excel'in CSV çıktısı `;` ile ayrılır ve ondalıkta virgül kullanır. */
@@ -96,34 +103,62 @@ export class DataEngine {
     return new DataEngine(db, worker, conn);
   }
 
-  /** Dosyayı `data` tablosuna alır, motoru kilitler ve profili döndürür. */
-  async load(file: File, displayName = file.name): Promise<DatasetProfile> {
-    const format = detectFormat(file.name);
-    if (!format) throw new Error("Bu dosya türü desteklenmiyor. CSV, Parquet veya Excel (.xlsx) yükleyin.");
+  /**
+   * Dosyaları tablolara alır (ilki `data`), ardından motoru dış erişime kilitler ve her tablonun profilini döndürür.
+   * Kilit tek yönlüdür: sonradan dosya eklemek için yeni bir motor örneğiyle tüm dosyalar yeniden yüklenir.
+   */
+  async loadTables(inputs: TableInput[]): Promise<TableProfile[]> {
+    for (const input of inputs) {
+      if (!detectFormat(input.file.name)) {
+        throw new Error(`"${input.file.name}" desteklenmiyor. CSV, Parquet veya Excel (.xlsx) yükleyin.`);
+      }
+    }
     const started = performance.now();
 
-    const input = await toDuckDbInput(file, format);
-    await this.db.registerFileBuffer(input.name, input.bytes);
-    const options = input.reader === "read_csv_auto" ? await csvOptions(this.conn, input.name) : "";
-    await this.conn.query(`CREATE TABLE data AS SELECT * FROM ${input.reader}('${input.name}'${options})`);
-    await this.db.dropFile(input.name);
+    for (const [i, input] of inputs.entries()) {
+      const source = await toDuckDbInput(input.file, detectFormat(input.file.name)!, i);
+      await this.db.registerFileBuffer(source.name, source.bytes);
+      const options = source.reader === "read_csv_auto" ? await csvOptions(this.conn, source.name) : "";
+      await this.conn.query(`CREATE TABLE ${quoteIdent(input.table)} AS SELECT * FROM ${source.reader}('${source.name}'${options})`);
+      await this.db.dropFile(source.name);
+    }
 
     // Veri içeride; bundan sonra hiçbir sorgu dosya veya ağa erişemez ve bu ayar geri açılamaz.
     await this.conn.query("SET enable_external_access = false");
     await this.conn.query("SET lock_configuration = true");
     await this.assertLocked();
 
-    const count = await this.conn.query("SELECT count(*)::DOUBLE AS n FROM data");
-    const rowCount = Number(count.toArray()[0].n);
-    const summary = tableToResult(await this.conn.query(SUMMARIZE_SQL), 0).rows as unknown as SummarizeRow[];
-    const names = summary.map((r) => r.column_name);
-    const distinctRow = (await this.conn.query(buildDistinctSql(names))).toArray()[0];
-    const exact = new Map(names.map((n, i) => [n, Number(distinctRow[`c${i}`])]));
-    const columns = buildColumnProfiles(summary, rowCount, exact);
-
-    return { name: displayName, rowCount, columns, loadMs: Math.round(performance.now() - started) };
+    const profiles: TableProfile[] = [];
+    for (const input of inputs) {
+      const table = quoteIdent(input.table);
+      const rowCount = Number((await this.conn.query(`SELECT count(*)::DOUBLE AS n FROM ${table}`)).toArray()[0].n);
+      const summary = tableToResult(await this.conn.query(summarizeSql(input.table)), 0).rows as unknown as SummarizeRow[];
+      const names = summary.map((r) => r.column_name);
+      const distinctRow = (await this.conn.query(buildDistinctSql(names, input.table))).toArray()[0];
+      const exact = new Map(names.map((n, i) => [n, Number(distinctRow[`c${i}`])]));
+      profiles.push({
+        table: input.table,
+        name: input.displayName,
+        rowCount,
+        columns: buildColumnProfiles(summary, rowCount, exact),
+        loadMs: Math.round(performance.now() - started),
+        sizeBytes: input.file.size,
+      });
+    }
+    return profiles;
   }
 
+  /** Sol tablodaki farklı anahtar değerlerinden kaçının sağ tabloda bulunduğu (0–1). Değerler tarayıcıdan çıkmaz. */
+  async joinCoverage(left: { table: string; column: string }, right: { table: string; column: string }): Promise<number> {
+    const l = quoteIdent(left.column);
+    const r = quoteIdent(right.column);
+    const res = await this.conn.query(
+      `SELECT COUNT(DISTINCT a.${l})::DOUBLE AS n, COUNT(DISTINCT a.${l}) FILTER (WHERE b.k IS NOT NULL)::DOUBLE AS matched
+       FROM ${quoteIdent(left.table)} a LEFT JOIN (SELECT DISTINCT ${r} AS k FROM ${quoteIdent(right.table)}) b ON a.${l} = b.k`,
+    );
+    const row = res.toArray()[0];
+    return Number(row.n) > 0 ? Number(row.matched) / Number(row.n) : 0;
+  }
   /** Kilidin gerçekten devrede olduğunu doğrular; değilse veri setini kullanıma açmaz. */
   private async assertLocked(): Promise<void> {
     // Ayarı geri açmayı deneyerek doğrulamak da mümkün, ama worker her reddi konsola hata olarak basıyor ve
@@ -138,12 +173,12 @@ export class DataEngine {
   }
 
   /** Bir sütunun farklı değerleri (örnek değer paylaşım önizlemesi için); `limit`+1 okunur ki fazlası anlaşılsın. */
-  async distinctValues(column: string, limit: number): Promise<unknown[]> {
+  async distinctValues(table: string, column: string, limit: number): Promise<unknown[]> {
     const col = quoteIdent(column);
-    const table = await this.conn.query(
-      `SELECT DISTINCT ${col}::VARCHAR AS v FROM data WHERE ${col} IS NOT NULL ORDER BY 1 LIMIT ${limit + 1}`,
+    const result = await this.conn.query(
+      `SELECT DISTINCT ${col}::VARCHAR AS v FROM ${quoteIdent(table)} WHERE ${col} IS NOT NULL ORDER BY 1 LIMIT ${limit + 1}`,
     );
-    return table.toArray().map((r) => r.v);
+    return result.toArray().map((r) => r.v);
   }
 
   async query(sql: string): Promise<QueryResult> {

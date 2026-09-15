@@ -150,3 +150,36 @@ def test_error_codes_are_specific():
         with pytest.raises(UnsafeSqlError) as err:
             validate_sql(sql)
         assert err.value.code == code, sql
+
+
+# --- Kullanıcının eklediği tablolar (JOIN) ---
+
+EXTRA = ["musteriler"]
+
+
+def test_join_with_declared_extra_table_is_accepted_and_runs(con):
+    con.execute(
+        "CREATE OR REPLACE TABLE musteriler AS SELECT * FROM (VALUES ('İstanbul', 'Kurumsal'), ('Ankara', 'Yeni')) t(sehir, segment)"
+    )
+    sql = """SELECT m.segment, SUM(d.toplam_tutar) AS ciro
+             FROM data d JOIN musteriler m ON d.sehir = m.sehir
+             GROUP BY 1 ORDER BY 2 DESC"""
+    validated = validate_sql(sql, EXTRA)
+    assert len(con.execute(validated.sql).fetchall()) == 2
+
+
+@pytest.mark.parametrize(
+    "sql, code",
+    [
+        ("SELECT * FROM musteriler", "unknown_table"),  # listede yok
+        ("SELECT * FROM data d JOIN kullanicilar k ON true", "unknown_table"),
+        ("SELECT * FROM main.musteriler", "qualified_table"),
+        ("SELECT * FROM data d JOIN read_csv('x.csv') r ON true", "table_function"),
+    ],
+    ids=["extra_not_declared", "other_unknown", "qualified_extra", "file_join"],
+)
+def test_extra_tables_do_not_open_other_access(sql, code):
+    extra = [] if "musteriler" in sql and "main." not in sql else EXTRA
+    with pytest.raises(UnsafeSqlError) as err:
+        validate_sql(sql, extra)
+    assert err.value.code == code

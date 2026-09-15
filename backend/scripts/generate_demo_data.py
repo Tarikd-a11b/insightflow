@@ -1,4 +1,4 @@
-"""Demo modu için 3 sentetik veri seti üretir (sabit tohum, tekrarlanabilir).
+"""Demo modu için sentetik veri setleri üretir (sabit tohum, tekrarlanabilir): 3 tek tablolu + 1 iki tablolu (JOIN).
 
 Çalıştırma: uv run python scripts/generate_demo_data.py
 Çıktı: ../frontend/public/demo/*.parquet
@@ -104,6 +104,44 @@ def finance() -> list[tuple]:
     return rows
 
 
+def customers_and_orders() -> tuple[list[tuple], list[tuple]]:
+    """İki tablolu JOIN demosu: müşteri özellikleri bir tabloda, harcamalar diğerinde.
+    Kendi rastgele üreticisini kullanır; diğer demo dosyalarının içeriği değişmez."""
+    r = random.Random(2026)
+    cities = {"İstanbul": 34, "Ankara": 15, "İzmir": 12, "Bursa": 9, "Antalya": 8, "Adana": 6, "Konya": 6, "Gaziantep": 5}
+    # segment: (ağırlık, ortalama sepet çarpanı, aylık sipariş sıklığı)
+    segments = {"Bireysel": (62, 1.0, 0.55), "Kurumsal": (14, 3.4, 1.3), "Öğrenci": (24, 0.6, 0.4)}
+    age_groups = {"18-24": 22, "25-34": 34, "35-44": 24, "45-54": 13, "55+": 7}
+    categories = {"Elektronik": (18, 3900), "Giyim": (27, 620), "Ev & Yaşam": (17, 880), "Kozmetik": (16, 360), "Kitap": (9, 150), "Spor": (13, 1050)}
+
+    customers, orders = [], []
+    for i in range(1, 1501):
+        seg = r.choices(list(segments), weights=[v[0] for v in segments.values()])[0]
+        signup = date(2023, 6, 1) + timedelta(days=r.randint(0, 900))
+        customers.append((f"M-{i:05d}", r.choices(list(cities), weights=list(cities.values()))[0], seg,
+                          r.choices(list(age_groups), weights=list(age_groups.values()))[0], signup))
+
+    oid = 500000
+    for cid, _city, seg, _age, signup in customers:
+        _, basket, freq = segments[seg]
+        months = max(1, (date(2025, 12, 31) - max(signup, date(2024, 1, 1))).days // 30)
+        for _ in range(int(r.gauss(freq * months, 1.5))):
+            oid += 1
+            day = max(signup, date(2024, 1, 1)) + timedelta(days=r.randint(0, months * 30))
+            if day > date(2025, 12, 31):
+                continue
+            cat = r.choices(list(categories), weights=[v[0] for v in categories.values()])[0]
+            amount = round(max(30.0, r.lognormvariate(math.log(categories[cat][1] * basket), 0.5)), 2)
+            orders.append((oid, cid, day, cat, r.choices([1, 2, 3], weights=[75, 18, 7])[0], amount))
+    # Gerçekçi bir kusur: siparişlerin küçük bir kısmı müşteri listesinde olmayan (silinmiş) hesaplara ait.
+    for _ in range(220):
+        oid += 1
+        orders.append((oid, f"M-9{r.randint(1000, 9999)}", date(2024, 1, 1) + timedelta(days=r.randint(0, 730)),
+                       r.choice(list(categories)), 1, round(r.uniform(80, 900), 2)))
+    orders.sort(key=lambda o: (o[2], o[0]))
+    return customers, orders
+
+
 def write(name: str, columns: str, rows: list[tuple]) -> None:
     # executemany satır satır çok yavaş; önce geçici CSV'ye yazıp DuckDB'ye tek seferde okutuyoruz.
     tmp = OUT / f"{name}.tmp.csv"
@@ -131,3 +169,10 @@ if __name__ == "__main__":
     write("finans_gelir_gider",
           "islem_id BIGINT, islem_tarihi DATE, departman VARCHAR, islem_turu VARCHAR, kalem VARCHAR, tutar_try DOUBLE",
           finance())
+    customers, orders = customers_and_orders()
+    write("siparisler",
+          "siparis_id BIGINT, musteri_id VARCHAR, siparis_tarihi DATE, kategori VARCHAR, adet INTEGER, tutar DOUBLE",
+          orders)
+    write("musteriler",
+          "musteri_id VARCHAR, sehir VARCHAR, segment VARCHAR, yas_grubu VARCHAR, kayit_tarihi DATE",
+          customers)

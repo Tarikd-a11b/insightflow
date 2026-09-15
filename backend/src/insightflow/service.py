@@ -46,7 +46,7 @@ async def answer(
             return Unanswerable(reason=output.reason or "Bu soru mevcut sütunlarla yanıtlanamıyor.")
 
         try:
-            validated = validate_sql(output.sql)
+            validated = validate_sql(output.sql, ctx.extra_table_names)
         except UnsafeSqlError as err:
             last_code = err.code
             log.warning("doğrulama reddi, tur=%d, kod=%s, sql=%r", round_no, err.code, output.sql[:500])

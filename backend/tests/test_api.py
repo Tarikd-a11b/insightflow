@@ -184,6 +184,46 @@ def test_history_is_limited(client):
     assert client.post("/sql", json={"question": "Soru?", "columns": COLUMNS, "history": [{"question": "x?", "sql": "S" * 4001}]}).status_code == 422
 
 
+TABLES = [{"name": "musteriler", "columns": [{"name": "musteri_id", "type": "VARCHAR"}, {"name": "segment", "type": "VARCHAR"}]}]
+ORDERS = [{"name": "musteri_id", "type": "VARCHAR"}, {"name": "tutar", "type": "DOUBLE"}]
+RELS = [{"left": "data.musteri_id", "right": "musteriler.musteri_id"}]
+
+
+def test_join_question_passes_tables_and_relationships(client):
+    gen = use(FakeGenerator(ok("SELECT m.segment, SUM(d.tutar) AS t FROM data d JOIN musteriler m ON d.musteri_id = m.musteri_id GROUP BY 1")))
+    res = client.post("/sql", json={"question": "Segment bazında ciro?", "columns": ORDERS, "tables": TABLES, "relationships": RELS})
+    assert res.status_code == 200, res.text
+    content = json.loads(build_user_content(gen.calls[0][0]))
+    assert content["tables"] == TABLES
+    assert content["relationships"] == RELS
+
+
+def test_sql_on_undeclared_table_is_rejected_and_fed_back(client):
+    join = "SELECT m.segment FROM data d JOIN musteriler m ON d.musteri_id = m.musteri_id"
+    gen = use(FakeGenerator(ok(join), ok(join), ok(join)))
+    res = client.post("/sql", json={"question": "Segment?", "columns": ORDERS})
+    assert res.status_code == 422
+    assert "musteriler" in gen.calls[1][1].error
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"tables": [{"name": "data", "columns": ORDERS}]},
+        {"tables": [{"name": "Müşteri Listesi", "columns": ORDERS}]},
+        {"tables": [TABLES[0], TABLES[0]]},
+        {"tables": [{"name": f"t{i}", "columns": ORDERS} for i in range(5)]},
+        {"tables": TABLES, "relationships": [{"left": "data.musteri_id", "right": "siparisler.musteri_id"}]},
+        {"tables": TABLES, "relationships": [{"left": "data.yok", "right": "musteriler.musteri_id"}]},
+    ],
+    ids=["primary_name", "invalid_name", "duplicate", "too_many", "unknown_rel_table", "unknown_rel_column"],
+)
+def test_table_payload_validation(client, patch):
+    use(FakeGenerator(ok("SELECT 1 AS x FROM data")))
+    res = client.post("/sql", json={"question": "Soru?", "columns": ORDERS, **patch})
+    assert res.status_code == 422
+
+
 def test_sliding_window_expires():
     now = [0.0]
     limiter = SlidingWindowLimiter(1, 10, clock=lambda: now[0])
