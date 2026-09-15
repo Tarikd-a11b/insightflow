@@ -1,11 +1,12 @@
 "use client";
 
-import { ArrowLeft, ArrowUp, RefreshCw, Square, X } from "lucide-react";
+import { ArrowLeft, ArrowUp, Loader2, RefreshCw, Square, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, checkHealth, toColumnPayload, type BackendHealth } from "@/lib/api";
+import { ApiError, checkHealth, toColumnPayload } from "@/lib/api";
 import { ask } from "@/lib/ask";
 import { suggestQuestions } from "@/lib/data/questions";
 import { formatBytes, formatInt } from "@/lib/format";
+import { watchHealth, type HealthState } from "@/lib/health-watch";
 import { outboundLog, totals } from "@/lib/outbound-log";
 import { cn } from "@/lib/utils";
 import { AnswerCard, type Turn } from "./answer-card";
@@ -21,7 +22,7 @@ import { useDataset } from "./use-dataset";
 
 type View = "answers" | "board" | "preview";
 
-const HEALTH_MESSAGE: Record<Exclude<BackendHealth, "ok">, string> = {
+const HEALTH_MESSAGE: Record<"unreachable" | "unconfigured", string> = {
   unreachable: "Yanıt motoruna ulaşılamıyor. Verini inceleyebilirsin ama soru soramazsın.",
   unconfigured: "Yanıt motoru çalışıyor ama yapay zekâ anahtarı tanımlı değil (GEMINI_API_KEY).",
 };
@@ -34,30 +35,32 @@ export function Workspace() {
   const [view, setView] = useState<View>("preview");
   const [boardOnly, setBoardOnly] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [health, setHealth] = useState<BackendHealth | null>(null);
+  const [health, setHealth] = useState<HealthState>("checking");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const nextId = useRef(1);
+  const stopHealthRef = useRef<(() => void) | null>(null);
 
   const log = useOutboundLog();
   const sent = useMemo(() => totals(log), [log]);
   const { pins, unavailable: pinsUnavailable } = usePins();
   const suggestions = useMemo(() => (ready ? suggestQuestions(ready.profile.columns) : []), [ready]);
   const busy = turns.some((t) => t.outcome === null);
-  const canAsk = health === "ok" || health === null;
+  // "checking" sırasında gönderime izin veriyoruz: sunucu uyanıksa kullanıcı beklemesin, değilse istek zaten hata verir.
+  const canAsk = health === "ok" || health === "checking";
+  const inputLocked = health === "unreachable" || health === "unconfigured";
 
+  // Ulaşılamazsa uyanma penceresi boyunca kendiliğinden yeniden dener (bkz. lib/health-watch.ts).
   const refreshHealth = useCallback(() => {
-    void checkHealth().then(setHealth);
+    stopHealthRef.current?.();
+    stopHealthRef.current = watchHealth(checkHealth, setHealth);
   }, []);
 
   useEffect(() => {
-    let alive = true;
-    void checkHealth().then((h) => alive && setHealth(h));
-    return () => {
-      alive = false;
-    };
-  }, []);
+    refreshHealth();
+    return () => stopHealthRef.current?.();
+  }, [refreshHealth]);
 
   useEffect(() => {
     threadEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -252,7 +255,17 @@ export function Workspace() {
             </div>
           )}
 
-          {health && health !== "ok" && (
+          {health === "waking" && (
+            <div role="status" className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 shrink-0 animate-spin text-outbound" aria-hidden />
+              <span>
+                <span className="text-foreground">Yanıt motoru uyanıyor…</span> Ücretsiz sunucu boştayken uyku moduna geçiyor; bu
+                genelde 30–50 saniye sürer. Hazır olunca soru kutusu kendiliğinden açılır.
+              </span>
+            </div>
+          )}
+
+          {(health === "unreachable" || health === "unconfigured") && (
             <div role="alert" className="flex items-center gap-3 rounded-lg border border-destructive/40 bg-card px-3 py-2 text-sm">
               <span className="text-destructive">{HEALTH_MESSAGE[health]}</span>
               <button
@@ -271,7 +284,7 @@ export function Workspace() {
               e.preventDefault();
               void submit(question);
             }}
-            className={cn("flex flex-col gap-2 rounded-lg border bg-card p-2 focus-within:border-foreground/30", !canAsk && "opacity-60")}
+            className={cn("flex flex-col gap-2 rounded-lg border bg-card p-2 focus-within:border-foreground/30", inputLocked && "opacity-60")}
           >
             <label htmlFor="question" className="sr-only">
               Verine bir soru sor
@@ -282,7 +295,7 @@ export function Workspace() {
               rows={2}
               maxLength={500}
               value={question}
-              disabled={!canAsk}
+              disabled={inputLocked}
               onChange={(e) => setQuestion(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {

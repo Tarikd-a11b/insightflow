@@ -18,16 +18,30 @@ export function sqlOk(sql: string, chart = "table", explanation = "Test sorgusu.
 }
 
 /** Backend'i taklit eder. /health varsayılan olarak "yapılandırılmış" döner. */
-export async function mockApi(page: Page, { health = true }: { health?: boolean | "unreachable" } = {}): Promise<MockApi> {
+export async function mockApi(
+  page: Page,
+  {
+    health = true,
+    sleepingHealthChecks = 0,
+  }: {
+    health?: boolean | "unreachable";
+    /** Uyuyan ücretsiz sunucuyu taklit eder: ilk N /health isteği bağlantı hatası verir. */
+    sleepingHealthChecks?: number;
+  } = {},
+): Promise<MockApi> {
   const seen = new Map<string, Json[]>();
   const queues = new Map<string, (Json | Handler)[]>();
+  let healthChecks = 0;
 
   await page.route(`${API}/**`, async (route) => {
     const req: Request = route.request();
     const path = new URL(req.url()).pathname;
 
     if (health === "unreachable") return route.abort("connectionrefused");
-    if (path === "/health") return route.fulfill({ json: { status: "ok", llm_configured: health } });
+    if (path === "/health") {
+      if (healthChecks++ < sleepingHealthChecks) return route.abort("connectionrefused");
+      return route.fulfill({ json: { status: "ok", llm_configured: health } });
+    }
 
     const body = (req.postDataJSON() ?? {}) as Json;
     seen.set(path, [...(seen.get(path) ?? []), body]);

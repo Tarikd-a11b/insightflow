@@ -96,9 +96,10 @@ export function summaryPayload(result: { columns: string[]; rows: Record<string,
 
 export type BackendHealth = "ok" | "unconfigured" | "unreachable";
 
-export async function checkHealth(signal?: AbortSignal): Promise<BackendHealth> {
+export async function checkHealth(): Promise<BackendHealth> {
   try {
-    const res = await fetch(`${API_URL}/health`, { signal });
+    // Uyanmakta olan sunucu bağlantıyı uzun süre açık tutabilir; tek denemeyi kısa tutup yeniden deneriz.
+    const res = await fetch(`${API_URL}/health`, { signal: AbortSignal.timeout(8_000) });
     if (!res.ok) return "unreachable";
     const data = await res.json();
     return data?.llm_configured ? "ok" : "unconfigured";

@@ -98,11 +98,25 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
     await expect(await ask(page, "Bir soru daha")).toContainText("3 dakika sonra");
   });
 
-  test("backend'e ulaşılamıyorsa soru kutusu kilitlenir ve neden gösterilir", async ({ page }) => {
+  test("backend'e ulaşılamıyorsa 'uyanıyor' gösterilir ve gönderim kilitlenir", async ({ page }) => {
     await mockApi(page, { health: "unreachable" });
     await openDemo(page, "Gelir & gider");
-    await expect(page.getByRole("alert").filter({ hasText: "ulaşılamıyor" })).toBeVisible();
-    await expect(page.locator("#question")).toBeDisabled();
+    await expect(page.getByRole("status").filter({ hasText: "Yanıt motoru uyanıyor" })).toBeVisible();
+    await page.locator("#question").fill("Toplam gider nedir?");
+    await expect(page.getByRole("button", { name: "Soruyu gönder" })).toBeDisabled();
+  });
+
+  test("uyuyan sunucu uyanınca soru kutusu kendiliğinden açılır", async ({ page }) => {
+    // Render ücretsiz planında ilk /health istekleri sunucu uyanana kadar başarısız olur.
+    const api = await mockApi(page, { sleepingHealthChecks: 2 });
+    api.queue("/sql", sqlOk("SELECT COUNT(*) AS islem_sayisi FROM data", "kpi"));
+    await openDemo(page, "Gelir & gider");
+
+    await page.locator("#question").fill("Kaç işlem var?");
+    await expect(page.getByRole("status").filter({ hasText: "uyanıyor" })).toBeHidden({ timeout: 20_000 });
+    await expect(page.getByRole("button", { name: "Soruyu gönder" })).toBeEnabled();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("article").last().locator("dl")).toContainText("1.068");
   });
 });
 
