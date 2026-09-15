@@ -1,6 +1,7 @@
 import type { Page, Request } from "@playwright/test";
 
-export const API = "http://localhost:8000";
+/** Tarayıcı API'ye uygulamanın kendi alan adındaki /api vekili üzerinden gider (bkz. next.config.ts). */
+export const API_PATTERN = "**/api/**";
 
 type Json = Record<string, unknown>;
 type Produced = { status?: number; json: Json } | Json;
@@ -9,6 +10,8 @@ type Handler = (body: Json) => Produced | Promise<Produced>;
 export interface MockApi {
   /** Endpoint'e giden gövdeler, sırayla. */
   bodies: (path: string) => Json[];
+  /** Endpoint'e giden isteklerin tam adresleri. */
+  urls: (path: string) => string[];
   /** Endpoint için sıradaki yanıtları ekler (sırayla tüketilir, sonuncusu tekrar eder). */
   queue: (path: string, ...responses: (Json | Handler)[]) => void;
 }
@@ -30,12 +33,13 @@ export async function mockApi(
   } = {},
 ): Promise<MockApi> {
   const seen = new Map<string, Json[]>();
+  const seenUrls = new Map<string, string[]>();
   const queues = new Map<string, (Json | Handler)[]>();
   let healthChecks = 0;
 
-  await page.route(`${API}/**`, async (route) => {
+  await page.route(API_PATTERN, async (route) => {
     const req: Request = route.request();
-    const path = new URL(req.url()).pathname;
+    const path = new URL(req.url()).pathname.replace(/^\/api/, "");
 
     if (health === "unreachable") return route.abort("connectionrefused");
     if (path === "/health") {
@@ -45,6 +49,7 @@ export async function mockApi(
 
     const body = (req.postDataJSON() ?? {}) as Json;
     seen.set(path, [...(seen.get(path) ?? []), body]);
+    seenUrls.set(path, [...(seenUrls.get(path) ?? []), req.url()]);
 
     const q = queues.get(path) ?? [];
     const next = q.length > 1 ? q.shift()! : q[0];
@@ -56,6 +61,7 @@ export async function mockApi(
 
   return {
     bodies: (path) => seen.get(path) ?? [],
+    urls: (path) => seenUrls.get(path) ?? [],
     queue: (path, ...responses) => queues.set(path, [...(queues.get(path) ?? []), ...responses]),
   };
 }

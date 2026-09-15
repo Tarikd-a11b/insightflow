@@ -44,8 +44,8 @@ async function benchSize(browser, n) {
 
   const page = await browser.newPage({ viewport: { width: 1440, height: 950 } });
   let pendingSql = "";
-  await page.route("http://localhost:8000/**", (route) => {
-    const path = new URL(route.request().url()).pathname;
+  await page.route("**/api/**", (route) => {
+    const path = new URL(route.request().url()).pathname.replace(/^\/api/, "");
     if (path === "/health") return route.fulfill({ json: { status: "ok", llm_configured: true } });
     return route.fulfill({ json: { status: "ok", sql: pendingSql, explanation: "bench", chart: "table", limited: false } });
   });

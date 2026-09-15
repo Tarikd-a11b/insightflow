@@ -126,18 +126,15 @@ export class DataEngine {
 
   /** Kilidin gerçekten devrede olduğunu doğrular; değilse veri setini kullanıma açmaz. */
   private async assertLocked(): Promise<void> {
-    const res = await this.conn.query("SELECT current_setting('enable_external_access')::VARCHAR AS v");
-    if (String(res.toArray()[0].v).toLowerCase() !== "false") {
-      throw new Error("Güvenlik kilidi uygulanamadı (dış erişim hâlâ açık).");
+    // Ayarı geri açmayı deneyerek doğrulamak da mümkün, ama worker her reddi konsola hata olarak basıyor ve
+    // kullanıcıyı yanıltıyordu. İki ayarın güncel değerini okumak aynı güvenceyi sessizce veriyor.
+    const res = await this.conn.query(
+      "SELECT current_setting('enable_external_access')::VARCHAR AS ext, current_setting('lock_configuration')::VARCHAR AS locked",
+    );
+    const row = res.toArray()[0];
+    if (String(row.ext).toLowerCase() !== "false" || String(row.locked).toLowerCase() !== "true") {
+      throw new Error("Güvenlik kilidi uygulanamadı (dış erişim açık veya ayarlar değiştirilebilir).");
     }
-    let reopened = false;
-    try {
-      await this.conn.query("SET enable_external_access = true");
-      reopened = true;
-    } catch {
-      // Beklenen: lock_configuration ayar değişikliğini reddeder.
-    }
-    if (reopened) throw new Error("Güvenlik kilidi uygulanamadı (ayarlar hâlâ değiştirilebilir).");
   }
 
   async query(sql: string): Promise<QueryResult> {

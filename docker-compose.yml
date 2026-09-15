@@ -15,8 +15,8 @@ services:
     build:
       context: ./frontend
       args:
-        # Tarayıcı API'ye host üzerinden bağlanır; bu yüzden servis adı değil localhost.
-        NEXT_PUBLIC_API_URL: http://localhost:8000
+        # Tarayıcı yalnızca web'in /api vekiliyle konuşur; vekil isteği compose ağındaki API servisine iletir.
+        API_UPSTREAM_URL: http://api:8000
     ports:
       - "3000:3000"
     depends_on:

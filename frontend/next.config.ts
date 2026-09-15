@@ -1,13 +1,20 @@
 import type { NextConfig } from "next";
 
 const isDev = process.env.NODE_ENV === "development";
-const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-const apiOrigin = new URL(apiUrl).origin;
 
 /*
- * İçerik Güvenlik Politikası gizlilik iddiasının tarayıcı düzeyindeki güvencesi: `connect-src` yalnızca kendi
- * alan adımıza ve InsightFlow API'sine izin verir. Uygulamada bir hata ya da kötü niyetli bir bağımlılık olsa
- * bile tarayıcı veriyi başka bir sunucuya gönderemez.
+ * Tarayıcı API'ye doğrudan değil, uygulamanın kendi alan adındaki `/api/*` üzerinden gider; Next bunu
+ * derleme anında belirlenen API adresine iletir. Neden:
+ * - Reklam/izleme engelleyiciler başka alan adına (ör. *.onrender.com) giden istekleri üçüncü taraf sayıp
+ *   engelliyordu (net::ERR_BLOCKED_BY_CLIENT); aynı alan adındaki istekleri engellemiyorlar.
+ * - CSP `connect-src 'self'` olabiliyor: tarayıcı veriyi uygulamanın kendi sunucusu dışında hiçbir yere gönderemez.
+ * Değişken adı geriye uyumluluk için korunuyor; artık yalnızca sunucu tarafında (rewrite hedefi) kullanılıyor.
+ */
+const apiUpstream = (process.env.API_UPSTREAM_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/+$/, "");
+new URL(apiUpstream); // Geçersiz adres (ör. yer tutucu metin) derlemeyi anlaşılır biçimde durdursun.
+
+/*
+ * İçerik Güvenlik Politikası gizlilik iddiasının tarayıcı düzeyindeki güvencesi.
  * DuckDB-WASM için `wasm-unsafe-eval`; Next'in satır içi başlatma betikleri ve tema betiği için `unsafe-inline`.
  */
 const csp = [
@@ -17,17 +24,19 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' blob: data:",
   "font-src 'self'",
-  `connect-src 'self' ${apiOrigin}${isDev ? " ws://localhost:*" : ""}`,
+  `connect-src 'self'${isDev ? " ws://localhost:*" : ""}`,
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",
-  ...(apiUrl.startsWith("https://") ? ["upgrade-insecure-requests"] : []),
 ].join("; ");
 
 const nextConfig: NextConfig = {
   // Docker imajı için bağımsız sunucu çıktısı; Vercel bu ayarı yok sayar.
   output: "standalone",
+  async rewrites() {
+    return [{ source: "/api/:path*", destination: `${apiUpstream}/:path*` }];
+  },
   async headers() {
     return [
       {

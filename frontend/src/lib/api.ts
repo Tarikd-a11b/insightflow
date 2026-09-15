@@ -1,7 +1,8 @@
 import type { ColumnProfile } from "./data/types";
 import { outboundLog, type OutboundKind } from "./outbound-log";
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+/** Aynı alan adındaki vekil; next.config.ts `/api/*` isteklerini gerçek API'ye iletir. */
+export const API_URL = "/api";
 
 export type ChartKind = "line" | "bar" | "scatter" | "kpi" | "table";
 

@@ -51,6 +51,8 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
 
     const [body] = api.bodies("/sql");
     expect(Object.keys(body).sort()).toEqual(["columns", "question"]);
+    // Reklam engelleyiciler üçüncü taraf alan adlarını engelliyor; API istekleri aynı alan adındaki /api'den gitmeli.
+    expect(api.urls("/sql")[0]).toBe(new URL("/api/sql", page.url()).href);
     expect(body.columns).toHaveLength(11);
     expect(JSON.stringify(body)).not.toMatch(/İstanbul|Giyim|Elektronik/);
     await expect(ledger(page)).toContainText("11 sütun adı");

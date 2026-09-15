@@ -48,7 +48,7 @@ Ayrıntılar ve yöntem: [`docs/benchmark/README.md`](docs/benchmark/README.md).
 
 **Tarayıcıda**
 - Dosya `data` tablosuna alındıktan sonra `enable_external_access=false` ve `lock_configuration=true` uygulanır. Motor, kilidi doğrulamadan veri setini açmaz. E2E testi: doğrulayıcı atlatılsa bile `read_text(...)` motor tarafından reddedilir.
-- **CSP** (`next.config.ts`): `connect-src` yalnızca kendi alan adı ve API. Bir hata ya da kötü niyetli bir bağımlılık olsa bile tarayıcı veriyi başka bir sunucuya gönderemez.
+- **Aynı alan adından API + CSP** (`next.config.ts`): tarayıcı API'ye doğrudan değil, uygulamanın kendi `/api/*` yolundan gider; Next bu isteği sunucu tarafında Render'a iletir. Böylece CSP `connect-src 'self'` olabiliyor: bir hata ya da kötü niyetli bir bağımlılık olsa bile tarayıcı uygulamanın kendi sunucusu dışında hiçbir yere istek atamaz. İlk sürümde tarayıcı `*.onrender.com`'a doğrudan gidiyordu ve reklam engelleyiciler bunu üçüncü taraf istek sayıp engelledi (`net::ERR_BLOCKED_BY_CLIENT`); vekil bu sorunu da çözdü.
 - DuckDB-WASM'ın parquet/json eklentileri derleme sırasında indirilip kendi alan adından sunulur. Varsayılan davranışta çalışma anında `extensions.duckdb.org`'a istek atılıyordu. Bu, CSP eklenince fark edildi ve E2E testiyle kilitlendi: sayfa dış hiçbir adrese istek atmaz.
 - Onarım isteğine giden DuckDB hata mesajında tırnak içi değerler ve sayılar maskelenir (`src/lib/sanitize.ts`).
 
@@ -114,8 +114,9 @@ cd frontend && npm install && npm run dev                                # http:
 | API | Render (Blueprint, Docker) | https://insightflow-api-d2gf.onrender.com | `render.yaml`; `GEMINI_API_KEY` (gizli), `CORS_ORIGINS=https://insightflow-rust.vercel.app` |
 
 Dikkat edilecekler:
-- `NEXT_PUBLIC_API_URL` **derleme sırasında** koda ve CSP'nin `connect-src` kuralına gömülür. Değeri değiştirince Vercel'de yeniden derleme (Redeploy) şart. Tanımsız bırakılırsa site `http://localhost:8000`'e bağlanmaya çalışır.
-- Arayüz adresi değişirse (ör. özel alan adı) Render'daki `CORS_ORIGINS` güncellenmeli; birden fazla adres virgülle ayrılır.
+- `NEXT_PUBLIC_API_URL` (ya da tercih edilen adıyla `API_UPSTREAM_URL`), `/api/*` vekilinin hedefidir ve **derleme sırasında** okunur; tarayıcıya gönderilmez. Değeri değiştirince Vercel'de yeniden derleme (Redeploy) şart. Tanımsız bırakılırsa vekil `http://localhost:8000`'e iletir; geçersiz bir değer (ör. yer tutucu metin) derlemeyi durdurur.
+- Tarayıcı API'yle aynı alan adından konuştuğu için CORS aslında kullanılmıyor; `CORS_ORIGINS` doğrudan erişim için yedek olarak duruyor.
+- Render ücretsiz planda uyuduğunda arayüz "Yanıt motoru uyanıyor…" gösterir ve 90 sn boyunca kendiliğinden yeniden dener (`src/lib/health-watch.ts`).
 - Yeni Vercel projelerinde **Deployment Protection** varsayılan olarak açık gelir; herkese açık demo için Settings → Deployment Protection'dan kapatılmalı.
 
 **Canlı doğrulama (15.09.2026):** üretim sitesinde headless Chromium ile demo veri seti açıldı ve "Kategori bazında iade oranı nedir?" soruldu.
