@@ -1,0 +1,58 @@
+import type { ColumnProfile } from "./types";
+
+// İş verisinde "asıl ölçü" olmaya aday sütun adları (Türkçe + İngilizce). Toplanabilir tutarlar,
+// toplanması anlamsız birim değerlerden (fiyat) önce gelir.
+const MEASURE_STRONG = /(tutar|toplam|gelir|ciro|satis|satış|kar|kâr|revenue|sales|amount|total|profit|mrr|arr)/i;
+const MEASURE_WEAK = /(fiyat|maliyet|gider|price|cost|usd|try|eur)/i;
+
+/** "toplam toplam_tutar" gibi tekrarları önler. */
+const sum = (c: ColumnProfile) => (/(toplam|total|sum)/i.test(c.name) ? c.name : `toplam ${c.name}`);
+
+function measureScore(c: ColumnProfile): number {
+  // Ada göre ipucu en güçlü sinyal; sonra değer çeşitliliği (1–4 arası "adet" gibi sütunlar geride kalır).
+  const hint = MEASURE_STRONG.test(c.name) ? 100 : MEASURE_WEAK.test(c.name) ? 50 : 0;
+  return hint + Math.min(c.distinct, 1000) / 100;
+}
+
+function dimensionScore(c: ColumnProfile): number {
+  // Grafikte en okunur aralık yaklaşık 5–12 kategori.
+  const d = c.distinct;
+  if (d < 2) return -100;
+  return d <= 12 ? d : 24 - d;
+}
+
+/**
+ * Şemadan kural tabanlı örnek sorular üretir. LLM çağrısı yapmaz; yalnızca sütun adı,
+ * tipi ve yerelde hesaplanan profil kullanılır.
+ */
+export function suggestQuestions(columns: ColumnProfile[], limit = 6): string[] {
+  const usable = columns.filter((c) => !c.identifier);
+  const measures = usable.filter((c) => c.kind === "numeric").sort((a, b) => measureScore(b) - measureScore(a));
+  const dates = usable.filter((c) => c.kind === "temporal");
+  const flags = usable.filter((c) => c.kind === "boolean");
+  const dims = usable
+    .filter((c) => c.kind === "text" && c.categorical)
+    .sort((a, b) => dimensionScore(b) - dimensionScore(a));
+
+  const out: string[] = [];
+  const add = (q: string) => {
+    if (!out.includes(q)) out.push(q);
+  };
+
+  const [m1, m2] = measures;
+  const [d1, d2] = dims;
+  const [t1] = dates;
+  const [f1] = flags;
+
+  if (t1 && m1) add(`Aylara göre ${sum(m1)} nasıl değişti?`);
+  if (d1 && m1) add(`${d1.name} bazında ${sum(m1)} nedir?`);
+  if (f1 && (d2 ?? d1)) add(`${(d2 ?? d1).name} bazında ${f1.name} oranı nedir?`);
+  if (d2 && m1) add(`Ortalama ${m1.name} en yüksek olan ${d2.name} hangisi?`);
+  if (m1 && m2) add(`${m1.name} ile ${m2.name} arasında bir ilişki var mı?`);
+  if (t1 && !m1) add(`Aylara göre kayıt sayısı nasıl değişti?`);
+  if (d1) add(`Kayıtların ${d1.name} dağılımı nasıl?`);
+  if (m1) add(`${m1.name} için ortalama, medyan ve en yüksek değer nedir?`);
+  if (out.length === 0) add(`Bu veri setinde kaç kayıt var?`);
+
+  return out.slice(0, limit);
+}

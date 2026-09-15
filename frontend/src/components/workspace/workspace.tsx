@@ -1,0 +1,327 @@
+"use client";
+
+import { ArrowLeft, ArrowUp, RefreshCw, Square, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ApiError, checkHealth, toColumnPayload, type BackendHealth } from "@/lib/api";
+import { ask } from "@/lib/ask";
+import { suggestQuestions } from "@/lib/data/questions";
+import { formatBytes, formatInt } from "@/lib/format";
+import { outboundLog, totals } from "@/lib/outbound-log";
+import { cn } from "@/lib/utils";
+import { AnswerCard, type Turn } from "./answer-card";
+import { DatasetPicker } from "./dataset-picker";
+import { useOutboundLog, usePins } from "./hooks";
+import { OutboundPanel } from "./outbound-panel";
+import { Pinboard } from "./pinboard";
+import { PreviewTable } from "./preview-table";
+import { PrivacyLedger } from "./privacy-ledger";
+import { SchemaPanel } from "./schema-panel";
+import { ThemeToggle } from "./theme-toggle";
+import { useDataset } from "./use-dataset";
+
+type View = "answers" | "board" | "preview";
+
+const HEALTH_MESSAGE: Record<Exclude<BackendHealth, "ok">, string> = {
+  unreachable: "Yanıt motoruna ulaşılamıyor. Verini inceleyebilirsin ama soru soramazsın.",
+  unconfigured: "Yanıt motoru çalışıyor ama yapay zekâ anahtarı tanımlı değil (GEMINI_API_KEY).",
+};
+
+export function Workspace() {
+  const { state, load, reset, engine } = useDataset();
+  const ready = state.status === "ready" ? state : null;
+  const [question, setQuestion] = useState("");
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [view, setView] = useState<View>("preview");
+  const [boardOnly, setBoardOnly] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [health, setHealth] = useState<BackendHealth | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const threadEndRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const nextId = useRef(1);
+
+  const log = useOutboundLog();
+  const sent = useMemo(() => totals(log), [log]);
+  const { pins, unavailable: pinsUnavailable } = usePins();
+  const suggestions = useMemo(() => (ready ? suggestQuestions(ready.profile.columns) : []), [ready]);
+  const busy = turns.some((t) => t.outcome === null);
+  const canAsk = health === "ok" || health === null;
+
+  const refreshHealth = useCallback(() => {
+    void checkHealth().then(setHealth);
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    void checkHealth().then((h) => alive && setHealth(h));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    threadEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [turns.length]);
+
+  function closeDataset() {
+    abortRef.current?.abort();
+    setTurns([]);
+    setView("preview");
+    setQuestion("");
+    setBoardOnly(false);
+    // Kayıt veri seti oturumuna aittir; yeni veri setinde şerit sıfırdan başlar.
+    outboundLog.clear();
+    void reset();
+  }
+
+  async function submit(text: string) {
+    const q = text.trim();
+    const current = engine.current;
+    if (q.length < 2 || busy || !ready || !current || !canAsk) return;
+
+    const id = nextId.current++;
+    const update = (patch: Partial<Turn>) => setTurns((all) => all.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setTurns((all) => [...all, { id, question: q, step: { kind: "writing" }, outcome: null }]);
+    setQuestion("");
+    setView("answers");
+
+    try {
+      const outcome = await ask(current, q, toColumnPayload(ready.profile.columns), (step) => update({ step }), controller.signal);
+      update({ outcome, step: null });
+    } catch (err) {
+      const aborted = err instanceof DOMException && err.name === "AbortError";
+      const message = aborted ? "Soru durduruldu." : err instanceof ApiError ? err.message : "Beklenmeyen bir hata oluştu.";
+      update({ outcome: { kind: "failed", message }, step: null });
+      if (err instanceof ApiError && err.status === 0) refreshHealth();
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null;
+    }
+  }
+
+  const header = (
+    <header className="flex flex-wrap items-center gap-3 border-b bg-panel px-4 py-2.5">
+      <button type="button" onClick={closeDataset} className="font-heading text-lg font-bold tracking-tight" aria-label="InsightFlow, başa dön">
+        Insight<span className="text-local">Flow</span>
+      </button>
+      {ready && (
+        <span className="flex min-w-0 items-center gap-1.5 rounded-md border bg-card py-1 pr-1 pl-2.5 text-sm">
+          <span className="truncate font-medium">{ready.profile.name}</span>
+          <span className="hidden font-mono text-xs text-muted-foreground sm:inline">
+            {formatInt(ready.profile.columns.length)} sütun · {formatBytes(ready.sizeBytes)} · {formatInt(ready.profile.loadMs)} ms
+          </span>
+          <button
+            type="button"
+            onClick={closeDataset}
+            className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label="Veri setini kapat"
+          >
+            <X className="size-3.5" />
+          </button>
+        </span>
+      )}
+      <div className="ml-auto flex items-center gap-2">
+        <PrivacyLedger rowCount={ready?.profile.rowCount ?? null} sent={sent} onOpen={() => setPanelOpen(true)} />
+        <ThemeToggle />
+      </div>
+    </header>
+  );
+
+  const panel = (
+    <OutboundPanel open={panelOpen} onClose={() => setPanelOpen(false)} entries={log} rowCount={ready?.profile.rowCount ?? null} />
+  );
+
+  if (!ready) {
+    return (
+      <div className="flex h-full flex-col">
+        {header}
+        <main className="flex-1 overflow-y-auto">
+          {boardOnly ? (
+            <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setBoardOnly(false)}
+                  className="flex items-center gap-1.5 rounded-md border bg-card px-2.5 py-1 text-sm text-muted-foreground hover:text-foreground"
+                >
+                  <ArrowLeft className="size-3.5" aria-hidden />
+                  Geri
+                </button>
+                <h1 className="font-heading text-2xl font-medium">Pano</h1>
+              </div>
+              <Pinboard pins={pins} unavailable={pinsUnavailable} />
+            </div>
+          ) : (
+            <DatasetPicker
+              onFile={(f, name) => void load(f, name)}
+              loadingName={state.status === "loading" ? state.name : null}
+              error={state.status === "error" ? state.message : null}
+              pinCount={pins?.length ?? 0}
+              onOpenBoard={() => setBoardOnly(true)}
+            />
+          )}
+        </main>
+        {panel}
+      </div>
+    );
+  }
+
+  const tabs: [View, string][] = [
+    ["answers", `Yanıtlar${turns.length ? ` (${turns.length})` : ""}`],
+    ["board", `Pano${pins?.length ? ` (${pins.length})` : ""}`],
+    ["preview", "Veri önizlemesi"],
+  ];
+
+  return (
+    <div className="flex h-full flex-col">
+      {header}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+        <aside className="flex flex-col gap-6 border-b bg-panel p-4 lg:w-[22rem] lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-b-0">
+          <section aria-labelledby="questions-heading" className="flex flex-col gap-2">
+            <h2 id="questions-heading" className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              Hemen sorabileceklerin
+            </h2>
+            <ul className="flex flex-col gap-1.5">
+              {suggestions.map((q) => (
+                <li key={q}>
+                  <button
+                    type="button"
+                    disabled={busy || !canAsk}
+                    onClick={() => void submit(q)}
+                    className="w-full rounded-md border bg-card px-3 py-2 text-left text-sm transition-colors hover:border-foreground/30 disabled:opacity-50"
+                  >
+                    {q}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+          <SchemaPanel profile={ready.profile} />
+        </aside>
+
+        <main className="flex min-h-[75vh] min-w-0 flex-1 flex-col gap-3 p-4 lg:min-h-0">
+          <div className="flex items-center justify-between gap-2">
+            <div role="tablist" aria-label="Görünüm" className="flex rounded-md border bg-card p-0.5 text-sm">
+              {tabs.map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={view === key}
+                  onClick={() => setView(key)}
+                  className={cn(
+                    "rounded px-3 py-1 whitespace-nowrap transition-colors",
+                    view === key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {view === "preview" && (
+              <span className="hidden font-mono text-xs text-muted-foreground sm:inline">
+                ilk {formatInt(ready.preview.rows.length)} / {formatInt(ready.profile.rowCount)} satır
+              </span>
+            )}
+          </div>
+
+          {view === "preview" && <PreviewTable result={ready.preview} columns={ready.profile.columns} className="flex-1" />}
+
+          {view === "board" && (
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+              <Pinboard pins={pins} unavailable={pinsUnavailable} />
+            </div>
+          )}
+
+          {view === "answers" && (
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+              {turns.length === 0 ? (
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  Soldaki önerilerden birine tıkla ya da aşağıya kendi sorunu yaz.
+                </p>
+              ) : (
+                <div className="mx-auto flex max-w-4xl flex-col gap-6">
+                  {turns.map((t) => (
+                    <AnswerCard key={t.id} turn={t} datasetName={ready.profile.name} onStop={() => abortRef.current?.abort()} />
+                  ))}
+                  <div ref={threadEndRef} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {health && health !== "ok" && (
+            <div role="alert" className="flex items-center gap-3 rounded-lg border border-destructive/40 bg-card px-3 py-2 text-sm">
+              <span className="text-destructive">{HEALTH_MESSAGE[health]}</span>
+              <button
+                type="button"
+                onClick={refreshHealth}
+                className="ml-auto flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <RefreshCw className="size-3" aria-hidden />
+                Tekrar dene
+              </button>
+            </div>
+          )}
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void submit(question);
+            }}
+            className={cn("flex flex-col gap-2 rounded-lg border bg-card p-2 focus-within:border-foreground/30", !canAsk && "opacity-60")}
+          >
+            <label htmlFor="question" className="sr-only">
+              Verine bir soru sor
+            </label>
+            <textarea
+              id="question"
+              ref={inputRef}
+              rows={2}
+              maxLength={500}
+              value={question}
+              disabled={!canAsk}
+              onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void submit(question);
+                }
+              }}
+              placeholder="Verine bir soru sor… (Enter ile gönder)"
+              className="resize-none bg-transparent px-2 py-1 text-sm outline-none placeholder:text-muted-foreground"
+            />
+            <div className="flex items-center justify-between gap-2 px-1">
+              <button type="button" onClick={() => setPanelOpen(true)} className="text-left text-xs text-muted-foreground hover:text-foreground">
+                Modele yalnızca <span className="text-outbound">{ready.profile.columns.length} sütunun adı ve tipi</span> gider.{" "}
+                <span className="underline underline-offset-2">Gönderilenleri gör</span>
+              </button>
+              {busy ? (
+                <button
+                  type="button"
+                  onClick={() => abortRef.current?.abort()}
+                  className="grid size-8 shrink-0 place-items-center rounded-md border bg-card text-foreground"
+                  aria-label="Soruyu durdur"
+                >
+                  <Square className="size-3.5 fill-current" />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={question.trim().length < 2 || !canAsk}
+                  className="grid size-8 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground disabled:opacity-40"
+                  aria-label="Soruyu gönder"
+                >
+                  <ArrowUp className="size-4" />
+                </button>
+              )}
+            </div>
+          </form>
+        </main>
+      </div>
+      {panel}
+    </div>
+  );
+}

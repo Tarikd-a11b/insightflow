@@ -1,0 +1,6 @@
+node_modules
+.next
+public/duckdb
+test-results
+playwright-report
+.env*

@@ -1,0 +1,106 @@
+{
+  "date": "2026-09-15T12:33:49.869Z",
+  "browser": "Chromium 149.0.7827.55",
+  "cpu": "11th Gen Intel(R) Core(TM) i7-1165G7 @ 2.80GHz",
+  "cores": 8,
+  "ram_gb": 16,
+  "runs": 5,
+  "sizes": [
+    {
+      "rows": 100000,
+      "cold_load_ms": 1355,
+      "load_ms": 774,
+      "queries": {
+        "aylik_trend": {
+          "median_ms": 9,
+          "min_ms": 7,
+          "max_ms": 12
+        },
+        "kategori_sehir_top20": {
+          "median_ms": 16,
+          "min_ms": 13,
+          "max_ms": 39
+        },
+        "iade_orani": {
+          "median_ms": 29,
+          "min_ms": 20,
+          "max_ms": 31
+        },
+        "kanal_medyan": {
+          "median_ms": 31,
+          "min_ms": 29,
+          "max_ms": 72
+        },
+        "sehir_basina_lider_kategori": {
+          "median_ms": 37,
+          "min_ms": 30,
+          "max_ms": 91
+        }
+      }
+    },
+    {
+      "rows": 1000000,
+      "cold_load_ms": 3306,
+      "load_ms": 3009,
+      "queries": {
+        "aylik_trend": {
+          "median_ms": 59,
+          "min_ms": 52,
+          "max_ms": 67
+        },
+        "kategori_sehir_top20": {
+          "median_ms": 108,
+          "min_ms": 103,
+          "max_ms": 114
+        },
+        "iade_orani": {
+          "median_ms": 60,
+          "min_ms": 52,
+          "max_ms": 68
+        },
+        "kanal_medyan": {
+          "median_ms": 137,
+          "min_ms": 133,
+          "max_ms": 157
+        },
+        "sehir_basina_lider_kategori": {
+          "median_ms": 112,
+          "min_ms": 101,
+          "max_ms": 137
+        }
+      }
+    },
+    {
+      "rows": 5000000,
+      "cold_load_ms": 11761,
+      "load_ms": 11943,
+      "queries": {
+        "aylik_trend": {
+          "median_ms": 252,
+          "min_ms": 230,
+          "max_ms": 270
+        },
+        "kategori_sehir_top20": {
+          "median_ms": 495,
+          "min_ms": 447,
+          "max_ms": 595
+        },
+        "iade_orani": {
+          "median_ms": 308,
+          "min_ms": 269,
+          "max_ms": 404
+        },
+        "kanal_medyan": {
+          "median_ms": 510,
+          "min_ms": 435,
+          "max_ms": 563
+        },
+        "sehir_basina_lider_kategori": {
+          "median_ms": 472,
+          "min_ms": 438,
+          "max_ms": 546
+        }
+      }
+    }
+  ]
+}

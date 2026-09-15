@@ -1,0 +1,21 @@
+# Render Blueprint — yalnızca backend. Arayüz Vercel'de (kök dizin: frontend, NEXT_PUBLIC_API_URL = bu servisin adresi).
+services:
+  - type: web
+    name: insightflow-api
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: frankfurt
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        # Vercel adresi belli olunca güncellenir (virgülle birden fazla).
+        sync: false
+      - key: RATE_LIMIT_REQUESTS
+        value: "30"
+      - key: RATE_LIMIT_WINDOW_SECONDS
+        value: "600"

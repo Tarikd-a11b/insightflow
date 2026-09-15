@@ -1,0 +1,95 @@
+{
+  "date": "2026-09-15T15:39:38",
+  "python": "3.12.14",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "processor": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+  "pandas": "3.0.5",
+  "duckdb": "1.5.5",
+  "runs": 5,
+  "results": [
+    {
+      "engine": "pandas",
+      "rows": 100000,
+      "load_ms": 511.9,
+      "queries_median_ms": {
+        "aylik_trend": 10.7,
+        "kategori_sehir_top20": 12.0,
+        "iade_orani": 5.3,
+        "kanal_medyan": 11.5,
+        "sehir_basina_lider_kategori": 14.3
+      },
+      "peak_memory_mb": 122.2,
+      "baseline_memory_mb": 19.1
+    },
+    {
+      "engine": "duckdb",
+      "rows": 100000,
+      "load_ms": 125.8,
+      "queries_median_ms": {
+        "aylik_trend": 5.5,
+        "kategori_sehir_top20": 7.4,
+        "iade_orani": 6.1,
+        "kanal_medyan": 9.4,
+        "sehir_basina_lider_kategori": 10.2
+      },
+      "peak_memory_mb": 64.4,
+      "baseline_memory_mb": 19.1
+    },
+    {
+      "engine": "pandas",
+      "rows": 1000000,
+      "load_ms": 577.3,
+      "queries_median_ms": {
+        "aylik_trend": 68.6,
+        "kategori_sehir_top20": 90.8,
+        "iade_orani": 44.3,
+        "kanal_medyan": 84.1,
+        "sehir_basina_lider_kategori": 90.5
+      },
+      "peak_memory_mb": 319.1,
+      "baseline_memory_mb": 19.1
+    },
+    {
+      "engine": "duckdb",
+      "rows": 1000000,
+      "load_ms": 141.1,
+      "queries_median_ms": {
+        "aylik_trend": 11.3,
+        "kategori_sehir_top20": 14.5,
+        "iade_orani": 10.8,
+        "kanal_medyan": 39.8,
+        "sehir_basina_lider_kategori": 16.1
+      },
+      "peak_memory_mb": 201.5,
+      "baseline_memory_mb": 19.1
+    },
+    {
+      "engine": "pandas",
+      "rows": 5000000,
+      "load_ms": 1221.6,
+      "queries_median_ms": {
+        "aylik_trend": 337.0,
+        "kategori_sehir_top20": 474.5,
+        "iade_orani": 228.4,
+        "kanal_medyan": 421.7,
+        "sehir_basina_lider_kategori": 463.8
+      },
+      "peak_memory_mb": 1046.4,
+      "baseline_memory_mb": 19.2
+    },
+    {
+      "engine": "duckdb",
+      "rows": 5000000,
+      "load_ms": 421.6,
+      "queries_median_ms": {
+        "aylik_trend": 54.4,
+        "kategori_sehir_top20": 66.1,
+        "iade_orani": 48.6,
+        "kanal_medyan": 195.5,
+        "sehir_basina_lider_kategori": 68.0
+      },
+      "peak_memory_mb": 746.5,
+      "baseline_memory_mb": 18.9
+    }
+  ]
+}

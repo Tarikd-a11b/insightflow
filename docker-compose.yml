@@ -1,0 +1,25 @@
+# Tek komutla yerelde çalıştırma:
+#   GEMINI_API_KEY=... docker compose up --build
+# Arayüz: http://localhost:3000   API: http://localhost:8000/docs
+services:
+  api:
+    build: ./backend
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY tanımlı olmalı}
+      CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        # Tarayıcı API'ye host üzerinden bağlanır; bu yüzden servis adı değil localhost.
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
