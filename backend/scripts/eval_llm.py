@@ -16,7 +16,7 @@ from pathlib import Path
 import duckdb
 
 from insightflow.config import settings
-from insightflow.llm import GeminiSqlGenerator, PreviousAttempt
+from insightflow.llm import GeminiSqlGenerator, PreviousAttempt, QueryContext
 from insightflow.schemas import ColumnSchema, SqlAnswer
 from insightflow.service import SqlGenerationFailed, answer
 
@@ -76,7 +76,7 @@ async def main() -> None:
             outcome = "failed"
             for attempt in range(MAX_REPAIRS + 1):
                 try:
-                    result = await answer(generator, q, columns, previous)
+                    result = await answer(generator, QueryContext(q, columns), previous)
                 except SqlGenerationFailed as err:
                     outcome = f"güvenli sorgu üretilemedi ({err.last_code})"
                     break

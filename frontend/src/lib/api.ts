@@ -60,15 +60,23 @@ async function postJson<T>(kind: OutboundKind, path: string, body: Record<string
   return data as T;
 }
 
-export function requestSql(question: string, columns: ColumnPayload[], signal?: AbortSignal) {
-  return postJson<SqlResponse>("sql", "/sql", { question, columns }, signal);
+/** Takip sorusu bağlamı: önceki soru ve SQL'i. Sonuç satırı taşımaz. */
+export interface HistoryItem {
+  question: string;
+  sql: string;
+}
+
+export function requestSql(question: string, columns: ColumnPayload[], signal?: AbortSignal, history: HistoryItem[] = []) {
+  // Geçmiş yoksa alan hiç gönderilmez; bağımsız soruların gövdesi önceki hâliyle birebir aynı kalır.
+  return postJson<SqlResponse>("sql", "/sql", { question, columns, ...(history.length ? { history } : {}) }, signal);
 }
 
 export function requestRepair(
-  args: { question: string; columns: ColumnPayload[]; sql: string; error: string; attempt: number },
+  args: { question: string; columns: ColumnPayload[]; sql: string; error: string; attempt: number; history?: HistoryItem[] },
   signal?: AbortSignal,
 ) {
-  return postJson<SqlResponse>("repair", "/repair", args, signal);
+  const { history, ...rest } = args;
+  return postJson<SqlResponse>("repair", "/repair", { ...rest, ...(history?.length ? { history } : {}) }, signal);
 }
 
 export const SUMMARY_MAX_ROWS = 20;

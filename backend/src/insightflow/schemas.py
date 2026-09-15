@@ -40,14 +40,27 @@ Question = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2,
 Columns = Annotated[list[ColumnSchema], Field(min_length=1, max_length=300)]
 
 
+class HistoryItem(BaseModel):
+    """Takip sorusu bağlamı: önceki soru ve onun (doğrulanmış) SQL'i. Sonuç satırı taşımaz."""
+
+    question: Question
+    sql: Annotated[str, StringConstraints(min_length=1, max_length=4000)]
+
+
+MAX_HISTORY = 3
+History = Annotated[list[HistoryItem], Field(max_length=MAX_HISTORY)]
+
+
 class SqlRequest(BaseModel):
     question: Question
     columns: Columns
+    history: History = []
 
 
 class RepairRequest(BaseModel):
     question: Question
     columns: Columns
+    history: History = []
     sql: Annotated[str, StringConstraints(min_length=1, max_length=4000)]
     error: Annotated[str, StringConstraints(min_length=1, max_length=2000)]
     attempt: Annotated[int, Field(ge=1, le=3)]

@@ -102,6 +102,36 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
     await expect(await ask(page, "Bir soru daha")).toContainText("3 dakika sonra");
   });
 
+  test("takip soruları önceki soru ve SQL'i bağlam olarak gönderir; bağlam kaldırılabilir ve seçilebilir", async ({ page }) => {
+    const api = await mockApi(page);
+    const sqlA = "SELECT kategori, SUM(toplam_tutar) AS ciro FROM data GROUP BY 1 ORDER BY 2 DESC";
+    const sqlB = "SELECT kategori, SUM(toplam_tutar) AS ciro FROM data WHERE YEAR(siparis_tarihi) = 2025 GROUP BY 1 ORDER BY 2 DESC";
+    api.queue("/sql", sqlOk(sqlA, "bar"), sqlOk(sqlB, "bar"), sqlOk("SELECT COUNT(*) AS n FROM data", "kpi"), sqlOk(sqlA, "bar"));
+    await openDemo(page);
+
+    // İlk soru bağımsızdır.
+    await ask(page, "Kategori bazında ciro?");
+    expect(api.bodies("/sql")[0]).not.toHaveProperty("history");
+
+    // Varsayılan bağlam: son yanıt.
+    await expect(page.locator("form")).toContainText("Önceki soruyla bağlantılı");
+    const b = await ask(page, "Sadece 2025");
+    expect(api.bodies("/sql")[1].history).toEqual([{ question: "Kategori bazında ciro?", sql: expect.stringContaining("SUM(toplam_tutar)") }]);
+    await expect(b).toContainText("“Kategori bazında ciro?” sorusunun devamı");
+
+    // Bağlam kaldırılınca soru bağımsız gider.
+    await page.getByRole("button", { name: "Önceki soruyla bağlantıyı kaldır" }).click();
+    await ask(page, "Kaç sipariş var?");
+    expect(api.bodies("/sql")[2]).not.toHaveProperty("history");
+
+    // Eski bir karttan devam: yalnızca o kartın zinciri gider (B → A).
+    await page.locator("article").nth(1).getByRole("button", { name: "Buna devam et" }).click();
+    await expect(page.locator("form")).toContainText("Sadece 2025");
+    await ask(page, "Bunu grafik yerine tablo olarak ver");
+    const history = api.bodies("/sql")[3].history as { question: string }[];
+    expect(history.map((h) => h.question)).toEqual(["Kategori bazında ciro?", "Sadece 2025"]);
+  });
+
   test("örnek değerler yalnızca onaylanan sütunlar için ve önizlendikten sonra gönderilir", async ({ page }) => {
     const api = await mockApi(page);
     api.queue("/sql", sqlOk("SELECT islem_turu, SUM(tutar_try) AS toplam FROM data GROUP BY 1", "bar"));

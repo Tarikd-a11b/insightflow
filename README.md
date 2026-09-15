@@ -78,6 +78,13 @@ Ayrıntılar ve yöntem: [`docs/benchmark/README.md`](docs/benchmark/README.md).
   - En fazla 20 satır × 8 sütun gönderilir.
   - Sunucu, sonucu üreten SQL'in toplulaştırılmış olduğunu yeniden doğrular (`summary.py`). `data`'yı okuyan her SELECT GROUP BY veya toplama fonksiyonu içermeli; pencere fonksiyonu ve alt sorgudaki COUNT sayılmaz.
 
+## Takip soruları
+
+- Son yanıt varsayılan olarak bağlamdır; soru kutusunun üstündeki "Önceki soruyla bağlantılı" etiketi × ile kaldırılabilir, herhangi bir karttaki **Buna devam et** bağlamı o karta çevirir.
+- Modele bağlam olarak yalnızca önceki soru ve SQL'i gider, en fazla 3 adım geriye (`src/lib/followup.ts`); sonuç satırı gitmez.
+- Prompt "X bazında kır" (gruplamayı koruyup ekler), "aynısını X için yap" (gruplamayı değiştirir) ve "sadece …" (filtre ekler) ifadelerini ayırır.
+- `scripts/eval_followup.py`: gerçek modelle 3 takip zincirinin 3'ü beklenen değişikliği uyguladı. İlk koşuda "kanal bazında kır" ayları düşürüyordu; prompt bu ayrımla düzeltildi.
+
 ## Şeffaflık ve pano
 
 - **Modele ne gitti?** (`src/lib/outbound-log.ts`): sunucuya giden her istek tek bir `postJson` üzerinden geçer ve gövdesi gönderildiği hâliyle kayda alınır. Üst şeritteki sayılar bu kayıttan türetilir; şeride tıklayınca gövdelerin kendisi açılır.
@@ -93,9 +100,9 @@ Ayrıntılar ve yöntem: [`docs/benchmark/README.md`](docs/benchmark/README.md).
 
 | Katman | Komut | Kapsam |
 | --- | --- | --- |
-| Backend | `uv run pytest` | 114 test: doğrulayıcı saldırı korpusu, API, özet toplulaştırma kuralı, örnek değer sınırları, hata temizleme, istek sınırı |
-| Frontend birim | `npm test` | 45 test: grafik seçici, profil, öneri soruları, örnek değer adayları, onarım döngüsü, giden istek kaydı, pano deposu (özet güncelleme dahil), backend uyanma izleyicisi |
-| Uçtan uca | `npm run test:e2e` | 14 senaryo, gerçek Chromium + gerçek DuckDB-WASM (backend taklit edilir): dış istek yok, API aynı alan adından, veri sızıntısı yok, onaylı örnek değerler, motor kilidi, onarım, özet onayı, pano kalıcılığı, PDF rapor indirme, durdurma, uyuyan sunucu, mobil |
+| Backend | `uv run pytest` | 116 test: doğrulayıcı saldırı korpusu, API, özet toplulaştırma kuralı, örnek değer ve takip geçmişi sınırları, hata temizleme, istek sınırı |
+| Frontend birim | `npm test` | 50 test: grafik seçici, profil, öneri soruları, örnek değer adayları, takip bağlamı zinciri, onarım döngüsü, giden istek kaydı, pano deposu (özet güncelleme dahil), backend uyanma izleyicisi |
+| Uçtan uca | `npm run test:e2e` | 15 senaryo, gerçek Chromium + gerçek DuckDB-WASM (backend taklit edilir): dış istek yok, API aynı alan adından, veri sızıntısı yok, takip soruları, onaylı örnek değerler, motor kilidi, onarım, özet onayı, pano kalıcılığı, PDF rapor indirme, durdurma, uyuyan sunucu, mobil |
 | Model | `uv run python scripts/eval_llm.py` | Gerçek Gemini ile 3 veri setinde 16 soru; SQL gerçek DuckDB'de çalıştırılır (`--with-values`: onaylı örnek değerlerle) |
 
 Son model değerlendirmesi (15.09.2026, gemini-3.5-flash-lite, 16 soru): **14 doğru sonuç, 1 doğru red** ("yarın dolar kaç olacak"), **1 yanlış red** ("aylık net kâr"), 0 çalışmayan SQL.

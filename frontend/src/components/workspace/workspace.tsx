@@ -1,11 +1,12 @@
 "use client";
 
-import { ArrowLeft, ArrowUp, Loader2, RefreshCw, Square, X } from "lucide-react";
+import { ArrowLeft, ArrowUp, CornerDownRight, Loader2, RefreshCw, Square, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, checkHealth, toColumnPayload, type ColumnPayload } from "@/lib/api";
+import { ApiError, checkHealth, toColumnPayload, type ColumnPayload, type HistoryItem } from "@/lib/api";
 import { ask } from "@/lib/ask";
 import { suggestQuestions } from "@/lib/data/questions";
 import { countSharedValues, MAX_SHARED_VALUES, type SharedValues } from "@/lib/data/sample-values";
+import { buildHistory, latestAnsweredId, type ContextTurn } from "@/lib/followup";
 import { formatBytes, formatInt } from "@/lib/format";
 import { watchHealth, type HealthState } from "@/lib/health-watch";
 import { outboundLog, totals } from "@/lib/outbound-log";
@@ -23,6 +24,8 @@ import { ThemeToggle } from "./theme-toggle";
 import { useDataset } from "./use-dataset";
 
 type View = "answers" | "board" | "preview";
+/** Takip bağlamı: son yanıt (varsayılan), belirli bir kart ya da bağlamsız. */
+type ContextChoice = { mode: "auto" } | { mode: "none" } | { mode: "turn"; id: number };
 
 const HEALTH_MESSAGE: Record<"unreachable" | "unconfigured", string> = {
   unreachable: "Yanıt motoruna ulaşılamıyor. Verini inceleyebilirsin ama soru soramazsın.",
@@ -41,13 +44,14 @@ export function Workspace() {
   const [sharedValues, setSharedValues] = useState<SharedValues>({});
   const [valuesDialogOpen, setValuesDialogOpen] = useState(false);
   const [health, setHealth] = useState<HealthState>("checking");
+  const [contextChoice, setContextChoice] = useState<ContextChoice>({ mode: "auto" });
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const nextId = useRef(1);
   const stopHealthRef = useRef<(() => void) | null>(null);
   // Sunucu uyanırken sorulan soru burada bekler; sağlık durumu "ok" olunca gönderilir.
-  const pendingRef = useRef<{ id: number; question: string; columns: ColumnPayload[] } | null>(null);
+  const pendingRef = useRef<{ id: number; question: string; columns: ColumnPayload[]; history: HistoryItem[] } | null>(null);
   const healthRef = useRef<HealthState>("checking");
   const onHealthRef = useRef<(state: HealthState) => void>(() => {});
 
@@ -62,6 +66,13 @@ export function Workspace() {
   const { pins, unavailable: pinsUnavailable } = usePins();
   const suggestions = useMemo(() => (ready ? suggestQuestions(ready.profile.columns) : []), [ready]);
   const busy = turns.some((t) => t.outcome === null);
+  const contextTurns: ContextTurn[] = useMemo(
+    () => turns.map((t) => ({ id: t.id, question: t.question, parentId: t.parentId, sql: t.outcome?.kind === "answer" ? t.outcome.sql : undefined })),
+    [turns],
+  );
+  const contextId =
+    contextChoice.mode === "none" ? null : contextChoice.mode === "turn" ? contextChoice.id : latestAnsweredId(contextTurns);
+  const contextQuestion = contextId === null ? null : (turns.find((t) => t.id === contextId)?.question ?? null);
   // Uyanırken de soru yazılıp gönderilebilir (kuyruğa alınır); yalnızca kesin ulaşılamazlıkta kilitlenir.
   const inputLocked = health === "unreachable" || health === "unconfigured";
 
@@ -82,7 +93,7 @@ export function Workspace() {
       if (!pending) return;
       if (state === "ok") {
         pendingRef.current = null;
-        void runTurn(pending.id, pending.question, pending.columns);
+        void runTurn(pending.id, pending.question, pending.columns, pending.history);
       } else if (state === "unreachable" || state === "unconfigured") {
         pendingRef.current = null;
         updateTurn(pending.id, {
@@ -112,6 +123,7 @@ export function Workspace() {
     // Kayıt veri seti oturumuna aittir; yeni veri setinde şerit sıfırdan başlar.
     outboundLog.clear();
     setSharedValues({});
+    setContextChoice({ mode: "auto" });
     void reset();
   }
 
@@ -125,7 +137,7 @@ export function Workspace() {
     abortRef.current?.abort();
   }
 
-  async function runTurn(id: number, q: string, columns: ColumnPayload[]) {
+  async function runTurn(id: number, q: string, columns: ColumnPayload[], history: HistoryItem[]) {
     const current = engine.current;
     if (!current) {
       updateTurn(id, { step: null, outcome: { kind: "failed", message: "Veri seti kapatıldığı için soru gönderilmedi." } });
@@ -135,7 +147,7 @@ export function Workspace() {
     abortRef.current = controller;
     updateTurn(id, { step: { kind: "writing" } });
     try {
-      const outcome = await ask(current, q, columns, (step) => updateTurn(id, { step }), controller.signal);
+      const outcome = await ask(current, q, columns, (step) => updateTurn(id, { step }), controller.signal, history);
       updateTurn(id, { outcome, step: null });
     } catch (err) {
       const aborted = err instanceof DOMException && err.name === "AbortError";
@@ -154,16 +166,27 @@ export function Workspace() {
     const id = nextId.current++;
     const columns = toColumnPayload(ready.profile.columns, sharedValues);
     const waking = healthRef.current === "waking";
-    setTurns((all) => [...all, { id, question: q, step: { kind: waking ? "waiting" : "writing" }, outcome: null }]);
+    const history = buildHistory(contextTurns, contextId);
+    const parentId = history.length ? (contextId ?? undefined) : undefined;
+    setTurns((all) => [...all, { id, question: q, parentId, step: { kind: waking ? "waiting" : "writing" }, outcome: null }]);
     setQuestion("");
     setView("answers");
+    // Her sorudan sonra bağlam varsayılana döner: bir sonraki soru bu yanıtın devamı sayılır.
+    setContextChoice({ mode: "auto" });
 
     if (waking) {
-      pendingRef.current = { id, question: q, columns };
+      pendingRef.current = { id, question: q, columns, history };
       return;
     }
-    void runTurn(id, q, columns);
+    void runTurn(id, q, columns, history);
   }
+
+  function continueFrom(id: number) {
+    setContextChoice({ mode: "turn", id });
+    setView("answers");
+    inputRef.current?.focus();
+  }
+
   const header = (
     <header className="flex flex-wrap items-center gap-3 border-b bg-panel px-4 py-2.5">
       <button type="button" onClick={closeDataset} className="font-heading text-lg font-bold tracking-tight" aria-label="InsightFlow, başa dön">
@@ -307,7 +330,15 @@ export function Workspace() {
               ) : (
                 <div className="mx-auto flex max-w-4xl flex-col gap-6">
                   {turns.map((t) => (
-                    <AnswerCard key={t.id} turn={t} datasetName={ready.profile.name} onStop={stop} />
+                    <AnswerCard
+                      key={t.id}
+                      turn={t}
+                      datasetName={ready.profile.name}
+                      onStop={stop}
+                      onContinue={continueFrom}
+                      isContext={t.id === contextId}
+                      parentQuestion={t.parentId === undefined ? undefined : turns.find((p) => p.id === t.parentId)?.question}
+                    />
                   ))}
                   <div ref={threadEndRef} />
                 </div>
@@ -346,6 +377,33 @@ export function Workspace() {
             }}
             className={cn("flex flex-col gap-2 rounded-lg border bg-card p-2 focus-within:border-foreground/30", inputLocked && "opacity-60")}
           >
+            {contextQuestion && !inputLocked && (
+              <div className="flex min-w-0 items-center gap-1.5 px-2 pt-0.5 text-xs">
+                <CornerDownRight className="size-3.5 shrink-0 text-outbound" aria-hidden />
+                <span className="shrink-0 text-muted-foreground">Önceki soruyla bağlantılı:</span>
+                <span className="truncate font-medium" title={contextQuestion}>
+                  &ldquo;{contextQuestion}&rdquo;
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setContextChoice({ mode: "none" })}
+                  className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                  aria-label="Önceki soruyla bağlantıyı kaldır"
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
+            )}
+            {!contextQuestion && contextChoice.mode === "none" && latestAnsweredId(contextTurns) !== null && !inputLocked && (
+              <button
+                type="button"
+                onClick={() => setContextChoice({ mode: "auto" })}
+                className="flex items-center gap-1.5 self-start px-2 pt-0.5 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <CornerDownRight className="size-3.5" aria-hidden />
+                Son soruya bağla
+              </button>
+            )}
             <label htmlFor="question" className="sr-only">
               Verine bir soru sor
             </label>

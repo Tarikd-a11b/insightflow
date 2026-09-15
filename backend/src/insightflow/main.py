@@ -5,7 +5,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from insightflow.config import settings
-from insightflow.llm import GeminiSqlGenerator, LlmUnavailableError, PreviousAttempt, SqlGenerator, Summarizer
+from insightflow.llm import GeminiSqlGenerator, LlmUnavailableError, PreviousAttempt, QueryContext, SqlGenerator, Summarizer
 from insightflow.ratelimit import SlidingWindowLimiter
 from insightflow.schemas import RepairRequest, SqlAnswer, SqlRequest, SummaryAnswer, SummaryRequest, Unanswerable
 from insightflow.service import SqlGenerationFailed, answer
@@ -59,9 +59,9 @@ def rate_limited(request: Request) -> None:
         )
 
 
-async def _run(generator: SqlGenerator, coro_args: dict) -> SqlAnswer | Unanswerable:
+async def _run(generator: SqlGenerator, ctx: QueryContext, previous: PreviousAttempt | None = None) -> SqlAnswer | Unanswerable:
     try:
-        return await answer(generator, **coro_args)
+        return await answer(generator, ctx, previous)
     except SqlGenerationFailed as err:
         raise HTTPException(422, "Bu soru için güvenli bir sorgu üretilemedi. Soruyu farklı ifade etmeyi deneyin.") from err
     except LlmUnavailableError as err:
@@ -75,7 +75,7 @@ def health() -> dict[str, object]:
 
 @app.post("/sql", response_model=SqlAnswer | Unanswerable, dependencies=[Depends(rate_limited)])
 async def generate_sql(body: SqlRequest, generator: SqlGenerator = Depends(get_generator)):
-    return await _run(generator, {"question": body.question, "columns": body.columns})
+    return await _run(generator, QueryContext(body.question, body.columns, body.history))
 
 
 def get_summarizer() -> Summarizer:
@@ -100,4 +100,4 @@ async def summarize(body: SummaryRequest, summarizer: Summarizer = Depends(get_s
 @app.post("/repair", response_model=SqlAnswer | Unanswerable, dependencies=[Depends(rate_limited)])
 async def repair_sql(body: RepairRequest, generator: SqlGenerator = Depends(get_generator)):
     previous = PreviousAttempt(sql=body.sql, error=body.error)
-    return await _run(generator, {"question": body.question, "columns": body.columns, "previous": previous})
+    return await _run(generator, QueryContext(body.question, body.columns, body.history), previous)

@@ -10,9 +10,9 @@ from __future__ import annotations
 import logging
 import time
 
-from insightflow.llm import PreviousAttempt, SqlGenerator
+from insightflow.llm import PreviousAttempt, QueryContext, SqlGenerator
 from insightflow.sanitize import sanitize_error
-from insightflow.schemas import ColumnSchema, SqlAnswer, Unanswerable
+from insightflow.schemas import SqlAnswer, Unanswerable
 from insightflow.validator import UnsafeSqlError, validate_sql
 
 log = logging.getLogger(__name__)
@@ -28,8 +28,7 @@ class SqlGenerationFailed(RuntimeError):
 
 async def answer(
     generator: SqlGenerator,
-    question: str,
-    columns: list[ColumnSchema],
+    ctx: QueryContext,
     previous: PreviousAttempt | None = None,
 ) -> SqlAnswer | Unanswerable:
     if previous is not None:
@@ -39,7 +38,7 @@ async def answer(
     last_code = "unknown"
     for round_no in range(1, MAX_VALIDATION_ROUNDS + 1):
         started = time.perf_counter()
-        output = await generator.generate(question, columns, previous, attempt=round_no)
+        output = await generator.generate(ctx, previous, attempt=round_no)
         elapsed_ms = round((time.perf_counter() - started) * 1000)
 
         if not output.answerable:

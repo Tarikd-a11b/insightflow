@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, BarChart3, Check, ChevronRight, Copy, FileDown, Loader2, Pin, PinOff, SearchX, Sparkles, Table2, Wrench } from "lucide-react";
+import { AlertTriangle, BarChart3, Check, ChevronRight, Copy, CornerDownRight, FileDown, Loader2, Pin, PinOff, SearchX, Sparkles, Table2, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ApiError, requestSummary, summaryPayload } from "@/lib/api";
 import type { AskOutcome, AskStep } from "@/lib/ask";
@@ -17,6 +17,8 @@ export interface Turn {
   id: number;
   question: string;
   step: TurnStep | null;
+  /** Takip sorusuysa bağlam alınan tur. */
+  parentId?: number;
   outcome: AskOutcome | null;
 }
 
@@ -33,10 +35,36 @@ function stepText(step: TurnStep): string {
   return step.kind === "repairing" ? `Hata onarılıyor (${step.attempt}/3)…` : STEP_TEXT[step.kind];
 }
 
-export function AnswerCard({ turn, datasetName, onStop }: { turn: Turn; datasetName: string; onStop: () => void }) {
+export function AnswerCard({
+  turn,
+  datasetName,
+  onStop,
+  onContinue,
+  isContext = false,
+  parentQuestion,
+}: {
+  turn: Turn;
+  datasetName: string;
+  onStop: () => void;
+  onContinue: (id: number) => void;
+  isContext?: boolean;
+  parentQuestion?: string;
+}) {
   const { outcome } = turn;
   return (
-    <article className="flex flex-col gap-3 border-b pb-6 duration-300 animate-in fade-in slide-in-from-bottom-1 last:border-0">
+    <article
+      data-turn={turn.id}
+      className={cn(
+        "flex flex-col gap-3 border-b pb-6 duration-300 animate-in fade-in slide-in-from-bottom-1 last:border-0",
+        isContext && "border-l-2 border-l-outbound/60 pl-3",
+      )}
+    >
+      {parentQuestion && (
+        <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+          <CornerDownRight className="size-3.5 shrink-0 text-outbound" aria-hidden />
+          <span className="truncate">&ldquo;{parentQuestion}&rdquo; sorusunun devamı</span>
+        </p>
+      )}
       <h3 className="font-heading text-lg leading-snug font-medium">{turn.question}</h3>
 
       {!outcome && turn.step && (
@@ -72,12 +100,24 @@ export function AnswerCard({ turn, datasetName, onStop }: { turn: Turn; datasetN
         </div>
       )}
 
-      {outcome?.kind === "answer" && <AnswerBody question={turn.question} answer={outcome} datasetName={datasetName} />}
+      {outcome?.kind === "answer" && (
+        <AnswerBody question={turn.question} answer={outcome} datasetName={datasetName} onContinue={() => onContinue(turn.id)} />
+      )}
     </article>
   );
 }
 
-function AnswerBody({ question, answer, datasetName }: { question: string; answer: Answer; datasetName: string }) {
+function AnswerBody({
+  question,
+  answer,
+  datasetName,
+  onContinue,
+}: {
+  question: string;
+  answer: Answer;
+  datasetName: string;
+  onContinue: () => void;
+}) {
   const chartable = useMemo(() => hasChart(answer.chart, answer.result), [answer]);
   const [view, setView] = useState<"chart" | "table">(chartable ? "chart" : "table");
   const [pinId, setPinId] = useState<string | null>(null);
@@ -125,6 +165,14 @@ function AnswerBody({ question, answer, datasetName }: { question: string; answe
               </div>
             )}
             <PinButton question={question} answer={answer} datasetName={datasetName} pinId={pinId} onPinChange={setPinId} summary={summary} />
+            <button
+              type="button"
+              onClick={onContinue}
+              className="flex items-center gap-1.5 rounded-md border bg-card px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-outbound/60 hover:text-foreground"
+            >
+              <CornerDownRight className="size-3.5 text-outbound" aria-hidden />
+              Buna devam et
+            </button>
             <PdfButton item={{ question, datasetName, explanation: answer.explanation, sql: answer.sql, chart: answer.chart, result: answer.result, summary }} />
           </div>
           <ResultView result={answer.result} chart={answer.chart} mode={view === "table" ? "table" : "auto"} />

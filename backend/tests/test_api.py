@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from insightflow import main
-from insightflow.llm import PreviousAttempt, build_user_content
+from insightflow.llm import PreviousAttempt, QueryContext, build_user_content
 from insightflow.ratelimit import SlidingWindowLimiter
 from insightflow.sanitize import sanitize_error
 from insightflow.schemas import ColumnSchema, LlmSqlOutput
@@ -21,12 +21,12 @@ class FakeGenerator:
 
     def __init__(self, *outputs: LlmSqlOutput):
         self.outputs = list(outputs)
-        self.calls: list[tuple[str, list[ColumnSchema], PreviousAttempt | None]] = []
+        self.calls: list[tuple[QueryContext, PreviousAttempt | None]] = []
         self.attempts: list[int] = []
 
-    async def generate(self, question, columns, previous=None, attempt=1):
+    async def generate(self, ctx, previous=None, attempt=1):
         self.attempts.append(attempt)
-        self.calls.append((question, columns, previous))
+        self.calls.append((ctx, previous))
         return self.outputs.pop(0)
 
 
@@ -59,7 +59,7 @@ def test_unsafe_sql_is_fed_back_and_never_returned(client):
     assert res.status_code == 200
     assert "read_csv" not in res.text
     assert len(gen.calls) == 2
-    assert "Güvenlik doğrulaması reddetti" in gen.calls[1][2].error
+    assert "Güvenlik doğrulaması reddetti" in gen.calls[1][1].error
 
 
 def test_gives_up_after_three_unsafe_rounds(client):
@@ -92,7 +92,7 @@ def test_repair_sanitizes_error_before_llm(client):
         },
     )
     assert res.status_code == 200
-    sent_error = gen.calls[0][2].error
+    sent_error = gen.calls[0][1].error
     assert "Ahmet" not in sent_error
     assert "INT32" in sent_error
 
@@ -123,7 +123,7 @@ def test_input_validation(client, payload):
     if "rows" in payload:
         # Fazladan alanlar kabul edilir ama modele asla iletilmez.
         assert res.status_code == 200
-        assert "İstanbul" not in build_user_content(*gen.calls[0])
+        assert "İstanbul" not in build_user_content(gen.calls[0][0])
     else:
         assert res.status_code == 422
 
@@ -140,7 +140,7 @@ def test_rate_limit(client):
 
 
 def test_llm_payload_contains_only_schema_and_question():
-    content = json.loads(build_user_content("Toplam?", [ColumnSchema(name="sehir", type="VARCHAR")], None))
+    content = json.loads(build_user_content(QueryContext("Toplam?", [ColumnSchema(name="sehir", type="VARCHAR")])))
     assert content == {"columns": [{"name": "sehir", "type": "VARCHAR"}], "question": "Toplam?"}
 
 
@@ -149,7 +149,7 @@ def test_llm_payload_includes_only_shared_sample_values():
         ColumnSchema(name="islem_turu", type="VARCHAR", values=["Gelir", "Gider"]),
         ColumnSchema(name="tutar_try", type="DOUBLE"),
     ]
-    content = json.loads(build_user_content("Net kâr?", columns, None))
+    content = json.loads(build_user_content(QueryContext("Net kâr?", columns)))
     assert content["columns"] == [
         {"name": "islem_turu", "type": "VARCHAR", "values": ["Gelir", "Gider"]},
         {"name": "tutar_try", "type": "DOUBLE"},
@@ -165,6 +165,23 @@ def test_sample_values_are_limited(client, values):
     use(FakeGenerator(ok("SELECT 1 AS x FROM data")))
     res = client.post("/sql", json={"question": "Soru?", "columns": [{"name": "k", "type": "VARCHAR", "values": values}]})
     assert res.status_code == 422
+
+
+def test_history_is_passed_to_model_without_rows(client):
+    gen = use(FakeGenerator(ok("SELECT sehir, SUM(toplam_tutar) AS t FROM data WHERE YEAR(tarih) = 2025 GROUP BY 1")))
+    history = [{"question": "Şehir bazında ciro?", "sql": "SELECT sehir, SUM(toplam_tutar) AS t FROM data GROUP BY 1"}]
+    res = client.post("/sql", json={"question": "Sadece 2025", "columns": COLUMNS, "history": history})
+    assert res.status_code == 200
+    content = json.loads(build_user_content(gen.calls[0][0]))
+    assert content["history"] == history
+    assert set(content) == {"columns", "question", "history"}
+
+
+def test_history_is_limited(client):
+    use(FakeGenerator(ok("SELECT 1 AS x FROM data")))
+    item = {"question": "Soru?", "sql": "SELECT 1"}
+    assert client.post("/sql", json={"question": "Soru?", "columns": COLUMNS, "history": [item] * 4}).status_code == 422
+    assert client.post("/sql", json={"question": "Soru?", "columns": COLUMNS, "history": [{"question": "x?", "sql": "S" * 4001}]}).status_code == 422
 
 
 def test_sliding_window_expires():
