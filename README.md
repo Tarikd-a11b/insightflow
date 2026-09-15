@@ -4,7 +4,7 @@ Verini tarayıcına bırak, doğal dille sor. Dosya cihazdan çıkmaz: sorgu mot
 
 **Canlı:** https://insightflow-rust.vercel.app · API: https://insightflow-api-d2gf.onrender.com/docs
 
-> API, Render'ın ücretsiz planında çalışıyor ve 15 dakika boşta kalınca uyuyor. İlk soruda 20–50 sn uyanma gecikmesi olabilir. Bu sırada arayüz "yanıt motoruna ulaşılamıyor" der; "Tekrar dene" ile düzelir. Veri yükleme ve profil çıkarma backend'e bağlı olmadığı için hemen çalışır.
+> API, Render'ın ücretsiz planında çalışıyor ve 15 dakika boşta kalınca uyuyor. İlk açılışta 20–50 sn uyanma gecikmesi olabilir. Bu sırada arayüz "Yanıt motoru uyanıyor…" gösterir ve sunucu hazır olunca soru kutusu kendiliğinden açılır. Veri yükleme ve profil çıkarma backend'e bağlı olmadığı için hemen çalışır.
 
 Plan ve mimari: [`docs/InsightFlow_Proje_Plani_v2.pdf`](docs/InsightFlow_Proje_Plani_v2.pdf) · Performans: [`docs/benchmark`](docs/benchmark/README.md)
 
@@ -78,15 +78,15 @@ Ayrıntılar ve yöntem: [`docs/benchmark/README.md`](docs/benchmark/README.md).
 
 - **Modele ne gitti?** (`src/lib/outbound-log.ts`): sunucuya giden her istek tek bir `postJson` üzerinden geçer ve gövdesi gönderildiği hâliyle kayda alınır. Üst şeritteki sayılar bu kayıttan türetilir; şeride tıklayınca gövdelerin kendisi açılır.
 - **Pano** (`src/lib/pins.ts`): sabitlenen yanıt, sonuç satırlarıyla birlikte yalnızca tarayıcının IndexedDB'sinde saklanır.
-- Soru "Durdur" ile iptal edilebilir. Backend'e ulaşılamıyorsa soru kutusu kilitlenir ve nedeni gösterilir.
+- Soru "Durdur" ile iptal edilebilir. Backend uyuyorsa "uyanıyor" gösterilir ve kendiliğinden yeniden denenir; 90 sn'de yanıt gelmezse neden gösterilir.
 
 ## Testler
 
 | Katman | Komut | Kapsam |
 | --- | --- | --- |
 | Backend | `uv run pytest` | 109 test: doğrulayıcı saldırı korpusu, API, özet toplulaştırma kuralı, hata temizleme, istek sınırı |
-| Frontend birim | `npm test` | 38 test: grafik seçici, profil, öneri soruları, onarım döngüsü, giden istek kaydı, pano deposu |
-| Uçtan uca | `npm run test:e2e` | 11 senaryo, gerçek Chromium + gerçek DuckDB-WASM (backend taklit edilir): dış istek yok, veri sızıntısı yok, motor kilidi, onarım, özet onayı, pano kalıcılığı, durdurma, mobil |
+| Frontend birim | `npm test` | 41 test: grafik seçici, profil, öneri soruları, onarım döngüsü, giden istek kaydı, pano deposu, backend uyanma izleyicisi |
+| Uçtan uca | `npm run test:e2e` | 12 senaryo, gerçek Chromium + gerçek DuckDB-WASM (backend taklit edilir): dış istek yok, API aynı alan adından, veri sızıntısı yok, motor kilidi, onarım, özet onayı, pano kalıcılığı, durdurma, uyuyan sunucu, mobil |
 | Model | `uv run python scripts/eval_llm.py` | Gerçek Gemini ile 3 veri setinde 16 soru; SQL gerçek DuckDB'de çalıştırılır |
 
 Son model değerlendirmesi (15.09.2026, gemini-3.5-flash-lite, 16 soru): **14 doğru sonuç, 1 doğru red** ("yarın dolar kaç olacak"), **1 yanlış red** ("aylık net kâr"), 0 çalışmayan SQL.
