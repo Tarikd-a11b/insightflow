@@ -2,7 +2,7 @@
 
 import { ArrowLeft, ArrowUp, Loader2, RefreshCw, Square, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, checkHealth, toColumnPayload } from "@/lib/api";
+import { ApiError, checkHealth, toColumnPayload, type ColumnPayload } from "@/lib/api";
 import { ask } from "@/lib/ask";
 import { suggestQuestions } from "@/lib/data/questions";
 import { formatBytes, formatInt } from "@/lib/format";
@@ -41,21 +41,46 @@ export function Workspace() {
   const abortRef = useRef<AbortController | null>(null);
   const nextId = useRef(1);
   const stopHealthRef = useRef<(() => void) | null>(null);
+  // Sunucu uyanırken sorulan soru burada bekler; sağlık durumu "ok" olunca gönderilir.
+  const pendingRef = useRef<{ id: number; question: string; columns: ColumnPayload[] } | null>(null);
+  const healthRef = useRef<HealthState>("checking");
+  const onHealthRef = useRef<(state: HealthState) => void>(() => {});
 
   const log = useOutboundLog();
   const sent = useMemo(() => totals(log), [log]);
   const { pins, unavailable: pinsUnavailable } = usePins();
   const suggestions = useMemo(() => (ready ? suggestQuestions(ready.profile.columns) : []), [ready]);
   const busy = turns.some((t) => t.outcome === null);
-  // "checking" sırasında gönderime izin veriyoruz: sunucu uyanıksa kullanıcı beklemesin, değilse istek zaten hata verir.
-  const canAsk = health === "ok" || health === "checking";
+  // Uyanırken de soru yazılıp gönderilebilir (kuyruğa alınır); yalnızca kesin ulaşılamazlıkta kilitlenir.
   const inputLocked = health === "unreachable" || health === "unconfigured";
 
   // Ulaşılamazsa uyanma penceresi boyunca kendiliğinden yeniden dener (bkz. lib/health-watch.ts).
   const refreshHealth = useCallback(() => {
     stopHealthRef.current?.();
-    stopHealthRef.current = watchHealth(checkHealth, setHealth);
+    stopHealthRef.current = watchHealth(checkHealth, (state) => onHealthRef.current(state));
   }, []);
+
+  const updateTurn = (id: number, patch: Partial<Turn>) => setTurns((all) => all.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+
+  // Her render'da en güncel kapanışı ref'e yaz; izleyici geri çağrısı hep güncel durumu görsün.
+  useEffect(() => {
+    onHealthRef.current = (state) => {
+      healthRef.current = state;
+      setHealth(state);
+      const pending = pendingRef.current;
+      if (!pending) return;
+      if (state === "ok") {
+        pendingRef.current = null;
+        void runTurn(pending.id, pending.question, pending.columns);
+      } else if (state === "unreachable" || state === "unconfigured") {
+        pendingRef.current = null;
+        updateTurn(pending.id, {
+          step: null,
+          outcome: { kind: "failed", message: "Yanıt motoruna ulaşılamadı; soru gönderilmedi. Sunucu hazır olunca yeniden sorabilirsin." },
+        });
+      }
+    };
+  });
 
   useEffect(() => {
     refreshHealth();
@@ -68,6 +93,7 @@ export function Workspace() {
 
   function closeDataset() {
     abortRef.current?.abort();
+    pendingRef.current = null;
     setTurns([]);
     setView("preview");
     setQuestion("");
@@ -77,33 +103,55 @@ export function Workspace() {
     void reset();
   }
 
-  async function submit(text: string) {
-    const q = text.trim();
-    const current = engine.current;
-    if (q.length < 2 || busy || !ready || !current || !canAsk) return;
+  function stop() {
+    const pending = pendingRef.current;
+    if (pending) {
+      pendingRef.current = null;
+      updateTurn(pending.id, { step: null, outcome: { kind: "failed", message: "Soru durduruldu." } });
+      return;
+    }
+    abortRef.current?.abort();
+  }
 
-    const id = nextId.current++;
-    const update = (patch: Partial<Turn>) => setTurns((all) => all.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  async function runTurn(id: number, q: string, columns: ColumnPayload[]) {
+    const current = engine.current;
+    if (!current) {
+      updateTurn(id, { step: null, outcome: { kind: "failed", message: "Veri seti kapatıldığı için soru gönderilmedi." } });
+      return;
+    }
     const controller = new AbortController();
     abortRef.current = controller;
-
-    setTurns((all) => [...all, { id, question: q, step: { kind: "writing" }, outcome: null }]);
-    setQuestion("");
-    setView("answers");
-
+    updateTurn(id, { step: { kind: "writing" } });
     try {
-      const outcome = await ask(current, q, toColumnPayload(ready.profile.columns), (step) => update({ step }), controller.signal);
-      update({ outcome, step: null });
+      const outcome = await ask(current, q, columns, (step) => updateTurn(id, { step }), controller.signal);
+      updateTurn(id, { outcome, step: null });
     } catch (err) {
       const aborted = err instanceof DOMException && err.name === "AbortError";
       const message = aborted ? "Soru durduruldu." : err instanceof ApiError ? err.message : "Beklenmeyen bir hata oluştu.";
-      update({ outcome: { kind: "failed", message }, step: null });
+      updateTurn(id, { outcome: { kind: "failed", message }, step: null });
       if (err instanceof ApiError && err.status === 0) refreshHealth();
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
     }
   }
 
+  function submit(text: string) {
+    const q = text.trim();
+    if (q.length < 2 || busy || !ready || !engine.current || inputLocked) return;
+
+    const id = nextId.current++;
+    const columns = toColumnPayload(ready.profile.columns);
+    const waking = healthRef.current === "waking";
+    setTurns((all) => [...all, { id, question: q, step: { kind: waking ? "waiting" : "writing" }, outcome: null }]);
+    setQuestion("");
+    setView("answers");
+
+    if (waking) {
+      pendingRef.current = { id, question: q, columns };
+      return;
+    }
+    void runTurn(id, q, columns);
+  }
   const header = (
     <header className="flex flex-wrap items-center gap-3 border-b bg-panel px-4 py-2.5">
       <button type="button" onClick={closeDataset} className="font-heading text-lg font-bold tracking-tight" aria-label="InsightFlow, başa dön">
@@ -191,7 +239,7 @@ export function Workspace() {
                 <li key={q}>
                   <button
                     type="button"
-                    disabled={busy || !canAsk}
+                    disabled={busy || inputLocked}
                     onClick={() => void submit(q)}
                     className="w-full rounded-md border bg-card px-3 py-2 text-left text-sm transition-colors hover:border-foreground/30 disabled:opacity-50"
                   >
@@ -247,7 +295,7 @@ export function Workspace() {
               ) : (
                 <div className="mx-auto flex max-w-4xl flex-col gap-6">
                   {turns.map((t) => (
-                    <AnswerCard key={t.id} turn={t} datasetName={ready.profile.name} onStop={() => abortRef.current?.abort()} />
+                    <AnswerCard key={t.id} turn={t} datasetName={ready.profile.name} onStop={stop} />
                   ))}
                   <div ref={threadEndRef} />
                 </div>
@@ -260,7 +308,7 @@ export function Workspace() {
               <Loader2 className="size-4 shrink-0 animate-spin text-outbound" aria-hidden />
               <span>
                 <span className="text-foreground">Yanıt motoru uyanıyor…</span> Ücretsiz sunucu boştayken uyku moduna geçiyor; bu
-                genelde 30–50 saniye sürer. Hazır olunca soru kutusu kendiliğinden açılır.
+                genelde 30–50 saniye sürer. Sorunu şimdi gönderebilirsin; sunucu hazır olunca kendiliğinden işlenir.
               </span>
             </div>
           )}
@@ -314,7 +362,7 @@ export function Workspace() {
               {busy ? (
                 <button
                   type="button"
-                  onClick={() => abortRef.current?.abort()}
+                  onClick={stop}
                   className="grid size-8 shrink-0 place-items-center rounded-md border bg-card text-foreground"
                   aria-label="Soruyu durdur"
                 >
@@ -323,7 +371,7 @@ export function Workspace() {
               ) : (
                 <button
                   type="submit"
-                  disabled={question.trim().length < 2 || !canAsk}
+                  disabled={question.trim().length < 2 || inputLocked}
                   className="grid size-8 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground disabled:opacity-40"
                   aria-label="Soruyu gönder"
                 >

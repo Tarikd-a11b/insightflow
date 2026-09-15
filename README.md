@@ -83,7 +83,7 @@ Ayrıntılar ve yöntem: [`docs/benchmark/README.md`](docs/benchmark/README.md).
   - Grafikler ekrandakiyle aynı ayar kodundan (`chart-option.ts`) sabit baskı temasıyla üretilir (ECharts SSR → SVG → svg2pdf).
   - Türkçe karakterler için IBM Plex Sans gömülür (OFL lisansı `public/fonts/report/OFL.txt`); metin PDF'te aranabilir.
   - Rapor kodu (jsPDF) yalnızca butona basınca yüklenir.
-- Soru "Durdur" ile iptal edilebilir. Backend uyuyorsa "uyanıyor" gösterilir ve kendiliğinden yeniden denenir; 90 sn'de yanıt gelmezse neden gösterilir.
+- Soru "Durdur" ile iptal edilebilir. Backend uyuyorsa "uyanıyor" gösterilir ve kendiliğinden yeniden denenir; bu sırada sorulan soru kuyrukta bekler ve sunucu hazır olunca kendiliğinden gönderilir. 90 sn'de yanıt gelmezse neden gösterilir.
 
 ## Testler
 

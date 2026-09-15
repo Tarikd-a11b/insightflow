@@ -100,25 +100,41 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
     await expect(await ask(page, "Bir soru daha")).toContainText("3 dakika sonra");
   });
 
-  test("backend'e ulaşılamıyorsa 'uyanıyor' gösterilir ve gönderim kilitlenir", async ({ page }) => {
+  test("sunucu uyanırken sorulan soru kuyrukta bekler, istek atılmaz ve durdurulabilir", async ({ page }) => {
     await mockApi(page, { health: "unreachable" });
+    const sqlRequests: string[] = [];
+    page.on("request", (req) => req.url().includes("/api/sql") && sqlRequests.push(req.url()));
     await openDemo(page, "Gelir & gider");
     await expect(page.getByRole("status").filter({ hasText: "Yanıt motoru uyanıyor" })).toBeVisible();
+
     await page.locator("#question").fill("Toplam gider nedir?");
-    await expect(page.getByRole("button", { name: "Soruyu gönder" })).toBeDisabled();
+    await page.keyboard.press("Enter");
+    const card = page.locator("article").last();
+    await expect(card).toContainText("hazır olunca soru gönderilecek");
+    await page.waitForTimeout(1_000);
+    expect(sqlRequests).toHaveLength(0);
+
+    await card.getByRole("button", { name: "Durdur" }).click();
+    await expect(card).toContainText("Soru durduruldu.");
+    expect(sqlRequests).toHaveLength(0);
   });
 
-  test("uyuyan sunucu uyanınca soru kutusu kendiliğinden açılır", async ({ page }) => {
-    // Render ücretsiz planında ilk /health istekleri sunucu uyanana kadar başarısız olur.
-    const api = await mockApi(page, { sleepingHealthChecks: 2 });
+  test("uyanırken sorulan soru, sunucu uyanınca kendiliğinden gönderilir", async ({ page }) => {
+    // Render ücretsiz planında ilk /health istekleri sunucu uyanana kadar başarısız olur (5 sn arayla).
+    const api = await mockApi(page, { sleepingHealthChecks: 3 });
     api.queue("/sql", sqlOk("SELECT COUNT(*) AS islem_sayisi FROM data", "kpi"));
     await openDemo(page, "Gelir & gider");
+    await expect(page.getByRole("status").filter({ hasText: "uyanıyor" })).toBeVisible();
 
     await page.locator("#question").fill("Kaç işlem var?");
-    await expect(page.getByRole("status").filter({ hasText: "uyanıyor" })).toBeHidden({ timeout: 20_000 });
-    await expect(page.getByRole("button", { name: "Soruyu gönder" })).toBeEnabled();
     await page.keyboard.press("Enter");
-    await expect(page.locator("article").last().locator("dl")).toContainText("1.068");
+    const card = page.locator("article").last();
+    await expect(card).toContainText("hazır olunca soru gönderilecek");
+    expect(api.bodies("/sql")).toHaveLength(0);
+
+    await expect(card.locator("dl")).toContainText("1.068", { timeout: 30_000 });
+    expect(api.bodies("/sql")).toHaveLength(1);
+    await expect(page.getByRole("status").filter({ hasText: "uyanıyor" })).toHaveCount(0);
   });
 });
 

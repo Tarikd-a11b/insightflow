@@ -10,22 +10,26 @@ import type { ReportItem } from "@/lib/report";
 import { cn } from "@/lib/utils";
 import { hasChart, ResultView } from "./result-view";
 
+/** Soru adımları: sunucu uyanırken kuyrukta bekleme + onarım döngüsünün adımları. */
+export type TurnStep = AskStep | { kind: "waiting" };
+
 export interface Turn {
   id: number;
   question: string;
-  step: AskStep | null;
+  step: TurnStep | null;
   outcome: AskOutcome | null;
 }
 
 type Answer = Extract<AskOutcome, { kind: "answer" }>;
 
-const STEP_TEXT: Record<AskStep["kind"], string> = {
+const STEP_TEXT: Record<TurnStep["kind"], string> = {
+  waiting: "Yanıt motoru uyanıyor; hazır olunca soru gönderilecek…",
   writing: "Sorgu yazılıyor…",
   running: "Tarayıcında çalıştırılıyor…",
   repairing: "Hata onarılıyor…",
 };
 
-function stepText(step: AskStep): string {
+function stepText(step: TurnStep): string {
   return step.kind === "repairing" ? `Hata onarılıyor (${step.attempt}/3)…` : STEP_TEXT[step.kind];
 }
 
