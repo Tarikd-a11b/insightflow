@@ -2,6 +2,10 @@
 
 Verini tarayıcına bırak, doğal dille sor. Dosya cihazdan çıkmaz: sorgu motoru (DuckDB-WASM) tarayıcıda çalışır, yapay zekâya yalnızca tablonun şeması gider.
 
+**Canlı:** https://insightflow-rust.vercel.app · API: https://insightflow-api-d2gf.onrender.com/docs
+
+> API, Render'ın ücretsiz planında çalışıyor ve 15 dakika boşta kalınca uyuyor. İlk soruda 20–50 sn uyanma gecikmesi olabilir. Bu sırada arayüz "yanıt motoruna ulaşılamıyor" der; "Tekrar dene" ile düzelir. Veri yükleme ve profil çıkarma backend'e bağlı olmadığı için hemen çalışır.
+
 Plan ve mimari: [`docs/InsightFlow_Proje_Plani_v2.pdf`](docs/InsightFlow_Proje_Plani_v2.pdf) · Performans: [`docs/benchmark`](docs/benchmark/README.md)
 
 ## Durum
@@ -12,7 +16,7 @@ Plan ve mimari: [`docs/InsightFlow_Proje_Plani_v2.pdf`](docs/InsightFlow_Proje_P
 | 2 | Güvenli text-to-SQL: şema-only prompt, sqlglot doğrulama + saldırı test seti, self-healing, istek sınırı, soru-cevap akışı | ✅ |
 | 3 | Grafik seçici (ECharts: çizgi/çubuk/dağılım/KPI) + onaylı yönetici özeti | ✅ |
 | 4 | "Modele ne gitti?" paneli, grafik panosu (IndexedDB), durdurma, backend durumu, boş/hata durumları | ✅ |
-| 5 | Playwright E2E, benchmark, CSP, Docker, CI, Render + Vercel yapılandırması | ✅ (canlıya alma bekliyor) |
+| 5 | Playwright E2E, benchmark, CSP, Docker, CI, canlıya alma (Render + Vercel) | ✅ |
 
 ## Akış
 
@@ -104,8 +108,20 @@ cd frontend && npm install && npm run dev                                # http:
 
 ## Canlıya alma
 
-- **Backend → Render:** `render.yaml` (Docker, Frankfurt, `/health`). `GEMINI_API_KEY` ve `CORS_ORIGINS` panelden girilir.
-- **Frontend → Vercel:** kök dizin `frontend`, ortam değişkeni `NEXT_PUBLIC_API_URL=<Render adresi>`. Bu adres CSP'ye de derleme sırasında gömülür.
+| Katman | Platform | Adres | Ayarlar |
+| --- | --- | --- | --- |
+| Arayüz | Vercel | https://insightflow-rust.vercel.app | Kök dizin `frontend`, `NEXT_PUBLIC_API_URL=https://insightflow-api-d2gf.onrender.com` (Config) |
+| API | Render (Blueprint, Docker) | https://insightflow-api-d2gf.onrender.com | `render.yaml`; `GEMINI_API_KEY` (gizli), `CORS_ORIGINS=https://insightflow-rust.vercel.app` |
+
+Dikkat edilecekler:
+- `NEXT_PUBLIC_API_URL` **derleme sırasında** koda ve CSP'nin `connect-src` kuralına gömülür. Değeri değiştirince Vercel'de yeniden derleme (Redeploy) şart. Tanımsız bırakılırsa site `http://localhost:8000`'e bağlanmaya çalışır.
+- Arayüz adresi değişirse (ör. özel alan adı) Render'daki `CORS_ORIGINS` güncellenmeli; birden fazla adres virgülle ayrılır.
+- Yeni Vercel projelerinde **Deployment Protection** varsayılan olarak açık gelir; herkese açık demo için Settings → Deployment Protection'dan kapatılmalı.
+
+**Canlı doğrulama (15.09.2026):** üretim sitesinde headless Chromium ile demo veri seti açıldı ve "Kategori bazında iade oranı nedir?" soruldu.
+- Doğru çubuk grafik geldi; tarayıcıda sorgu 9 ms, toplam yanıt 2,4 sn sürdü.
+- Onaylı yönetici özeti üretildi.
+- Tarayıcı yalnızca kendi alan adı ve API ile konuştu (`/health`, `/sql`, `/summary`); soru isteklerinde veri değeri yoktu.
 - **CI** (`.github/workflows/ci.yml`): pytest, lint, tip kontrolü, vitest, production derlemesine karşı Playwright ve iki Docker imajının derlenmesi.
 
 ## Yapı
