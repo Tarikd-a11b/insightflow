@@ -144,6 +144,29 @@ def test_llm_payload_contains_only_schema_and_question():
     assert content == {"columns": [{"name": "sehir", "type": "VARCHAR"}], "question": "Toplam?"}
 
 
+def test_llm_payload_includes_only_shared_sample_values():
+    columns = [
+        ColumnSchema(name="islem_turu", type="VARCHAR", values=["Gelir", "Gider"]),
+        ColumnSchema(name="tutar_try", type="DOUBLE"),
+    ]
+    content = json.loads(build_user_content("Net kâr?", columns, None))
+    assert content["columns"] == [
+        {"name": "islem_turu", "type": "VARCHAR", "values": ["Gelir", "Gider"]},
+        {"name": "tutar_try", "type": "DOUBLE"},
+    ]
+
+
+@pytest.mark.parametrize(
+    "values",
+    [["x"] * 13, ["a" * 61], ["satır\nsonu"], [""]],
+    ids=["too_many", "too_long", "control_char", "empty_string"],
+)
+def test_sample_values_are_limited(client, values):
+    use(FakeGenerator(ok("SELECT 1 AS x FROM data")))
+    res = client.post("/sql", json={"question": "Soru?", "columns": [{"name": "k", "type": "VARCHAR", "values": values}]})
+    assert res.status_code == 422
+
+
 def test_sliding_window_expires():
     now = [0.0]
     limiter = SlidingWindowLimiter(1, 10, clock=lambda: now[0])

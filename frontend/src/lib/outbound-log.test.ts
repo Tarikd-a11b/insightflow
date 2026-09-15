@@ -30,7 +30,15 @@ describe("outboundLog", () => {
     await requestRepair({ question: "A?", columns, sql: "x", error: "e", attempt: 1 });
     respond({ summary: "özet" });
     await requestSummary({ question: "A?", sql: "SELECT 1", columns: ["a"], rows: [[1], [2], [3]] });
-    expect(totals(outboundLog.snapshot())).toEqual({ columns: 2, summaryRows: 3, requests: 3 });
+    expect(totals(outboundLog.snapshot())).toEqual({ columns: 2, summaryRows: 3, sampleValues: 0, requests: 3 });
+  });
+
+  it("onayla paylaşılan örnek değerler istekler arasında tekrar sayılmaz", async () => {
+    respond({ status: "ok", sql: "SELECT 1", explanation: "", chart: "table", limited: false });
+    const shared = [{ name: "islem_turu", type: "VARCHAR", values: ["Gelir", "Gider"] }, ...columns];
+    await requestSql("A?", shared);
+    await requestSql("B?", shared);
+    expect(totals(outboundLog.snapshot()).sampleValues).toBe(2);
   });
 
   it("ağ hatasında da kayıt kalır (gövde tarayıcıdan çıkmış olabilir)", async () => {
@@ -43,6 +51,6 @@ describe("outboundLog", () => {
     respond({ status: "unanswerable", reason: "yok" });
     await requestSql("A?", columns);
     outboundLog.clear();
-    expect(totals(outboundLog.snapshot())).toEqual({ columns: 0, summaryRows: 0, requests: 0 });
+    expect(totals(outboundLog.snapshot())).toEqual({ columns: 0, summaryRows: 0, sampleValues: 0, requests: 0 });
   });
 });

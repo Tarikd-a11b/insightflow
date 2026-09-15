@@ -26,6 +26,9 @@ Veri:
   büyük harf, Türkçe karakter veya başka işaret içeren adları çift tırnakla yaz ("Satış Tutarı").
 - Tablonun satırlarını görmüyorsun; değerler hakkında varsayım yapma. Metin filtrelerinde büyük/küçük harfe
   duyarsız karşılaştırma (ILIKE) tercih et.
+- Bir sütunda `values` alanı varsa bu, o sütunun olası değerlerinin TAM listesidir (kullanıcı paylaşmayı seçti).
+  Filtrelerde bu değerleri birebir yazımıyla kullan (= veya IN); listede olmayan bir değer uydurma. Örneğin
+  islem_turu için values ["Gelir", "Gider"] ise net kâr = gelirler toplamı eksi giderler toplamıdır.
 
 Kurallar:
 - Yalnızca SELECT (gerekirse WITH) yaz. Tek ifade. INSERT/UPDATE/DELETE/CREATE/COPY/ATTACH/SET/PRAGMA yasak.
@@ -78,9 +81,12 @@ class SqlGenerator(Protocol):
 
 
 def build_user_content(question: str, columns: list[ColumnSchema], previous: PreviousAttempt | None) -> str:
-    """Modele giden içeriğin tamamı. Şema ve soru dışında hiçbir şey yok (bkz. test_llm_payload)."""
+    """Modele giden içeriğin tamamı: şema, soru ve yalnızca kullanıcının paylaşmayı seçtiği örnek değerler
+    (bkz. test_llm_payload)."""
     payload: dict[str, object] = {
-        "columns": [{"name": c.name, "type": c.type} for c in columns],
+        "columns": [
+            {"name": c.name, "type": c.type, **({"values": c.values} if c.values else {})} for c in columns
+        ],
         "question": question,
     }
     if previous is not None:

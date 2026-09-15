@@ -51,6 +51,10 @@ Ayrıntılar ve yöntem: [`docs/benchmark/README.md`](docs/benchmark/README.md).
 - **Aynı alan adından API + CSP** (`next.config.ts`): tarayıcı API'ye doğrudan değil, uygulamanın kendi `/api/*` yolundan gider; Next bu isteği sunucu tarafında Render'a iletir. Böylece CSP `connect-src 'self'` olabiliyor: bir hata ya da kötü niyetli bir bağımlılık olsa bile tarayıcı uygulamanın kendi sunucusu dışında hiçbir yere istek atamaz. İlk sürümde tarayıcı `*.onrender.com`'a doğrudan gidiyordu ve reklam engelleyiciler bunu üçüncü taraf istek sayıp engelledi (`net::ERR_BLOCKED_BY_CLIENT`); vekil bu sorunu da çözdü.
 - DuckDB-WASM'ın parquet/json eklentileri derleme sırasında indirilip kendi alan adından sunulur. Varsayılan davranışta çalışma anında `extensions.duckdb.org`'a istek atılıyordu. Bu, CSP eklenince fark edildi ve E2E testiyle kilitlendi: sayfa dış hiçbir adrese istek atmaz.
 - Onarım isteğine giden DuckDB hata mesajında tırnak içi değerler ve sayılar maskelenir (`src/lib/sanitize.ts`).
+- **Onaylı örnek değerler** (`src/lib/data/sample-values.ts`, varsayılan kapalı): kullanıcı isterse az kategorili metin sütunlarının değerleri (en fazla 12 değer, kimlik sütunları hariç, ör. `islem_turu: Gelir, Gider`) modele gönderilir.
+  - Gönderilecek değerlerin tamamı önce gösterilir; sütun sütun seçilir.
+  - Şerit ve "Modele ne gitti?" paneli paylaşılan değerleri sayar.
+  - Backend değer sayısını ve uzunluğunu sınırlar.
 
 **Backend** (`src/insightflow/validator.py`)
 - Tek ifade; kök yalnızca SELECT veya UNION/INTERSECT/EXCEPT.
@@ -89,14 +93,16 @@ Ayrıntılar ve yöntem: [`docs/benchmark/README.md`](docs/benchmark/README.md).
 
 | Katman | Komut | Kapsam |
 | --- | --- | --- |
-| Backend | `uv run pytest` | 109 test: doğrulayıcı saldırı korpusu, API, özet toplulaştırma kuralı, hata temizleme, istek sınırı |
-| Frontend birim | `npm test` | 41 test: grafik seçici, profil, öneri soruları, onarım döngüsü, giden istek kaydı, pano deposu (özet güncelleme dahil), backend uyanma izleyicisi |
-| Uçtan uca | `npm run test:e2e` | 13 senaryo, gerçek Chromium + gerçek DuckDB-WASM (backend taklit edilir): dış istek yok, API aynı alan adından, veri sızıntısı yok, motor kilidi, onarım, özet onayı, pano kalıcılığı, PDF rapor indirme, durdurma, uyuyan sunucu, mobil |
-| Model | `uv run python scripts/eval_llm.py` | Gerçek Gemini ile 3 veri setinde 16 soru; SQL gerçek DuckDB'de çalıştırılır |
+| Backend | `uv run pytest` | 114 test: doğrulayıcı saldırı korpusu, API, özet toplulaştırma kuralı, örnek değer sınırları, hata temizleme, istek sınırı |
+| Frontend birim | `npm test` | 45 test: grafik seçici, profil, öneri soruları, örnek değer adayları, onarım döngüsü, giden istek kaydı, pano deposu (özet güncelleme dahil), backend uyanma izleyicisi |
+| Uçtan uca | `npm run test:e2e` | 14 senaryo, gerçek Chromium + gerçek DuckDB-WASM (backend taklit edilir): dış istek yok, API aynı alan adından, veri sızıntısı yok, onaylı örnek değerler, motor kilidi, onarım, özet onayı, pano kalıcılığı, PDF rapor indirme, durdurma, uyuyan sunucu, mobil |
+| Model | `uv run python scripts/eval_llm.py` | Gerçek Gemini ile 3 veri setinde 16 soru; SQL gerçek DuckDB'de çalıştırılır (`--with-values`: onaylı örnek değerlerle) |
 
 Son model değerlendirmesi (15.09.2026, gemini-3.5-flash-lite, 16 soru): **14 doğru sonuç, 1 doğru red** ("yarın dolar kaç olacak"), **1 yanlış red** ("aylık net kâr"), 0 çalışmayan SQL.
 
-Yanlış red, yalnızca şema gönderme kararının bilinen bedeli: model `islem_turu` sütununda "Gelir/Gider" değerleri olduğunu göremiyor. Önceki koşularda aynı soruyu doğru yanıtlamıştı, yani sonuç koşudan koşuya değişebiliyor. Plandaki çözüm, düşük kardinaliteli sütunların örnek değerlerini **kullanıcı onayıyla** göndermek; henüz uygulanmadı.
+Yanlış red, yalnızca şema gönderme kararının bilinen bedeli: model `islem_turu` sütununda "Gelir/Gider" değerleri olduğunu göremiyor. Önceki koşularda aynı soruyu doğru yanıtlamıştı, yani sonuç koşudan koşuya değişebiliyor.
+
+**Onaylı örnek değerlerle** (`--with-values`, aynı gün, aynı 16 soru): **15 doğru sonuç, 1 doğru red, 0 yanlış red**. "Aylık net kâr" doğru çizgi grafiğe dönüştü; "mobil ve web" karşılaştırması tam değer adlarıyla filtrelendi. Tek koşuluk bir ölçüm; model sonuçları koşudan koşuya değişebilir.
 
 Bir model, JSON içinde çift tırnaklı sütun adını kaçıramayıp kesik SQL döndürdü. Çözüm olarak sade adlar tırnaksız yazdırılıyor ve reddedilen turlardan sonra model zinciri kaydırılıyor. Bu hatayı yakalayan iki soru sete eklendi.
 

@@ -54,6 +54,8 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
     // Reklam engelleyiciler üçüncü taraf alan adlarını engelliyor; API istekleri aynı alan adındaki /api'den gitmeli.
     expect(api.urls("/sql")[0]).toBe(new URL("/api/sql", page.url()).href);
     expect(body.columns).toHaveLength(11);
+    // Örnek değer paylaşımı varsayılan olarak kapalı: hiçbir sütunda values yok.
+    expect(JSON.stringify(body)).not.toContain('"values"');
     expect(JSON.stringify(body)).not.toMatch(/İstanbul|Giyim|Elektronik/);
     await expect(ledger(page)).toContainText("11 sütun adı");
   });
@@ -98,6 +100,39 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
 
     await expect(await ask(page, "Yarın yağmur yağacak mı?")).toContainText("hava durumu bilgisi yok");
     await expect(await ask(page, "Bir soru daha")).toContainText("3 dakika sonra");
+  });
+
+  test("örnek değerler yalnızca onaylanan sütunlar için ve önizlendikten sonra gönderilir", async ({ page }) => {
+    const api = await mockApi(page);
+    api.queue("/sql", sqlOk("SELECT islem_turu, SUM(tutar_try) AS toplam FROM data GROUP BY 1", "bar"));
+    await openDemo(page, "Gelir & gider");
+
+    await page.getByRole("button", { name: "Örnek değerleri paylaş" }).click();
+    const dialog = page.locator("dialog[open]");
+    const turu = dialog.locator("label").filter({ hasText: "islem_turu" });
+    await expect(turu).toContainText("Gelir");
+    await expect(turu).toContainText("Gider");
+    // Aday sütunlar: departman (5), islem_turu (2), kalem (9). Departmanı paylaşmıyoruz.
+    await dialog.locator("label").filter({ hasText: "departman" }).getByRole("checkbox").uncheck();
+    await expect(dialog).toContainText("Modele 11 değer gidecek");
+    await dialog.getByRole("button", { name: "Seçilenleri paylaş" }).click();
+    await expect(page.locator("form")).toContainText("11 örnek değer");
+
+    await ask(page, "Net kâr nedir?");
+    const [body] = api.bodies("/sql");
+    const byName = Object.fromEntries((body.columns as { name: string; values?: string[] }[]).map((c) => [c.name, c.values]));
+    expect(byName.islem_turu).toEqual(["Gelir", "Gider"]);
+    expect(byName.kalem).toHaveLength(9);
+    expect(byName.departman).toBeUndefined();
+    expect(byName.tutar_try).toBeUndefined();
+    await expect(page.locator("[data-ledger]")).toContainText("11 örnek değer");
+
+    // Paylaşım kapatılınca sonraki sorularda değer gitmez.
+    await page.getByRole("button", { name: "Örnek değerleri düzenle" }).click();
+    await page.locator("dialog[open]").getByRole("button", { name: "Paylaşmayı kapat" }).click();
+    api.queue("/sql", sqlOk("SELECT COUNT(*) AS n FROM data", "kpi"));
+    await ask(page, "Kaç işlem var?");
+    expect(JSON.stringify(api.bodies("/sql").at(-1))).not.toContain('"values"');
   });
 
   test("sunucu uyanırken sorulan soru kuyrukta bekler, istek atılmaz ve durdurulabilir", async ({ page }) => {

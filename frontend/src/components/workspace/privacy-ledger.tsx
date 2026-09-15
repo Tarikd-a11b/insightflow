@@ -19,7 +19,7 @@ export function PrivacyLedger({
   const outbound =
     sent.requests === 0
       ? "hiçbir şey"
-      : `${sent.columns} sütun adı${sent.summaryRows > 0 ? ` + ${sent.summaryRows} özet satırı` : ""}`;
+      : `${sent.columns} sütun adı${sent.sampleValues > 0 ? ` + ${sent.sampleValues} örnek değer` : ""}${sent.summaryRows > 0 ? ` + ${sent.summaryRows} özet satırı` : ""}`;
 
   return (
     <button

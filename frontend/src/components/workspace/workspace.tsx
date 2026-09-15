@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, checkHealth, toColumnPayload, type ColumnPayload } from "@/lib/api";
 import { ask } from "@/lib/ask";
 import { suggestQuestions } from "@/lib/data/questions";
+import { countSharedValues, MAX_SHARED_VALUES, type SharedValues } from "@/lib/data/sample-values";
 import { formatBytes, formatInt } from "@/lib/format";
 import { watchHealth, type HealthState } from "@/lib/health-watch";
 import { outboundLog, totals } from "@/lib/outbound-log";
@@ -16,6 +17,7 @@ import { OutboundPanel } from "./outbound-panel";
 import { Pinboard } from "./pinboard";
 import { PreviewTable } from "./preview-table";
 import { PrivacyLedger } from "./privacy-ledger";
+import { SampleValuesDialog } from "./sample-values-dialog";
 import { SchemaPanel } from "./schema-panel";
 import { ThemeToggle } from "./theme-toggle";
 import { useDataset } from "./use-dataset";
@@ -35,6 +37,9 @@ export function Workspace() {
   const [view, setView] = useState<View>("preview");
   const [boardOnly, setBoardOnly] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  // Onayla paylaşılan örnek değerler (sütun → değerler). Boş = yalnızca şema gider.
+  const [sharedValues, setSharedValues] = useState<SharedValues>({});
+  const [valuesDialogOpen, setValuesDialogOpen] = useState(false);
   const [health, setHealth] = useState<HealthState>("checking");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
@@ -45,6 +50,12 @@ export function Workspace() {
   const pendingRef = useRef<{ id: number; question: string; columns: ColumnPayload[] } | null>(null);
   const healthRef = useRef<HealthState>("checking");
   const onHealthRef = useRef<(state: HealthState) => void>(() => {});
+
+  const sharedCount = countSharedValues(sharedValues);
+  const readValues = useCallback(
+    (column: string) => engine.current?.distinctValues(column, MAX_SHARED_VALUES) ?? Promise.resolve([]),
+    [engine],
+  );
 
   const log = useOutboundLog();
   const sent = useMemo(() => totals(log), [log]);
@@ -100,6 +111,7 @@ export function Workspace() {
     setBoardOnly(false);
     // Kayıt veri seti oturumuna aittir; yeni veri setinde şerit sıfırdan başlar.
     outboundLog.clear();
+    setSharedValues({});
     void reset();
   }
 
@@ -140,7 +152,7 @@ export function Workspace() {
     if (q.length < 2 || busy || !ready || !engine.current || inputLocked) return;
 
     const id = nextId.current++;
-    const columns = toColumnPayload(ready.profile.columns);
+    const columns = toColumnPayload(ready.profile.columns, sharedValues);
     const waking = healthRef.current === "waking";
     setTurns((all) => [...all, { id, question: q, step: { kind: waking ? "waiting" : "writing" }, outcome: null }]);
     setQuestion("");
@@ -355,10 +367,23 @@ export function Workspace() {
               className="resize-none bg-transparent px-2 py-1 text-sm outline-none placeholder:text-muted-foreground"
             />
             <div className="flex items-center justify-between gap-2 px-1">
-              <button type="button" onClick={() => setPanelOpen(true)} className="text-left text-xs text-muted-foreground hover:text-foreground">
-                Modele yalnızca <span className="text-outbound">{ready.profile.columns.length} sütunun adı ve tipi</span> gider.{" "}
-                <span className="underline underline-offset-2">Gönderilenleri gör</span>
-              </button>
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                <span>
+                  Modele <span className="text-outbound">{ready.profile.columns.length} sütunun adı ve tipi</span>
+                  {sharedCount > 0 && (
+                    <>
+                      {" "}+ <span className="text-outbound">{sharedCount} örnek değer</span>
+                    </>
+                  )}{" "}
+                  gider.
+                </span>
+                <button type="button" onClick={() => setValuesDialogOpen(true)} className="underline underline-offset-2 hover:text-foreground">
+                  {sharedCount > 0 ? "Örnek değerleri düzenle" : "Örnek değerleri paylaş"}
+                </button>
+                <button type="button" onClick={() => setPanelOpen(true)} className="underline underline-offset-2 hover:text-foreground">
+                  Gönderilenleri gör
+                </button>
+              </span>
               {busy ? (
                 <button
                   type="button"
@@ -383,6 +408,14 @@ export function Workspace() {
         </main>
       </div>
       {panel}
+      <SampleValuesDialog
+        open={valuesDialogOpen}
+        onClose={() => setValuesDialogOpen(false)}
+        columns={ready.profile.columns}
+        shared={sharedValues}
+        onChange={setSharedValues}
+        readValues={readValues}
+      />
     </div>
   );
 }

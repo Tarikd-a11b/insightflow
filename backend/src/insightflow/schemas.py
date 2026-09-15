@@ -7,11 +7,17 @@ ChartKind = Literal["line", "bar", "scatter", "kpi", "table"]
 _CONTROL_CHARS = {chr(c) for c in range(32)} - {"\t"}
 
 
+MAX_SAMPLE_VALUES = 12
+SampleValue = Annotated[str, StringConstraints(min_length=1, max_length=60)]
+
+
 class ColumnSchema(BaseModel):
-    """LLM'e giden tek bilgi: sütun adı ve tipi. Değer taşımaz."""
+    """LLM'e giden sütun bilgisi: ad ve tip. `values` yalnızca kullanıcı az kategorili bir sütunun değerlerini
+    paylaşmayı açıkça seçtiyse gelir (varsayılan: yok)."""
 
     name: Annotated[str, StringConstraints(min_length=1, max_length=128)]
     type: Annotated[str, StringConstraints(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_(), \[\]]+$")]
+    values: Annotated[list[SampleValue], Field(max_length=MAX_SAMPLE_VALUES)] | None = None
 
     @field_validator("name")
     @classmethod
@@ -19,6 +25,15 @@ class ColumnSchema(BaseModel):
         if any(ch in _CONTROL_CHARS for ch in v):
             raise ValueError("Sütun adı kontrol karakteri içeremez.")
         return v
+
+    @field_validator("values")
+    @classmethod
+    def clean_values(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return None
+        if any(ch in _CONTROL_CHARS for value in v for ch in value):
+            raise ValueError("Örnek değer kontrol karakteri içeremez.")
+        return v or None
 
 
 Question = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=500)]

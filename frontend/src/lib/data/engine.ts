@@ -2,7 +2,7 @@
 
 import * as duckdb from "@duckdb/duckdb-wasm";
 import { Type, type Table } from "apache-arrow";
-import { SUMMARIZE_SQL, buildColumnProfiles, buildDistinctSql, type SummarizeRow } from "./profile";
+import { SUMMARIZE_SQL, buildColumnProfiles, buildDistinctSql, quoteIdent, type SummarizeRow } from "./profile";
 import type { DatasetProfile, QueryResult } from "./types";
 
 /**
@@ -135,6 +135,15 @@ export class DataEngine {
     if (String(row.ext).toLowerCase() !== "false" || String(row.locked).toLowerCase() !== "true") {
       throw new Error("Güvenlik kilidi uygulanamadı (dış erişim açık veya ayarlar değiştirilebilir).");
     }
+  }
+
+  /** Bir sütunun farklı değerleri (örnek değer paylaşım önizlemesi için); `limit`+1 okunur ki fazlası anlaşılsın. */
+  async distinctValues(column: string, limit: number): Promise<unknown[]> {
+    const col = quoteIdent(column);
+    const table = await this.conn.query(
+      `SELECT DISTINCT ${col}::VARCHAR AS v FROM data WHERE ${col} IS NOT NULL ORDER BY 1 LIMIT ${limit + 1}`,
+    );
+    return table.toArray().map((r) => r.v);
   }
 
   async query(sql: string): Promise<QueryResult> {

@@ -10,14 +10,18 @@ export type SqlResponse =
   | { status: "ok"; sql: string; explanation: string; chart: ChartKind; limited: boolean }
   | { status: "unanswerable"; reason: string };
 
-/** Modele giden şemanın tamamı: yalnızca ad ve tip. Profil (min/max, benzersiz sayı) gönderilmez. */
+/**
+ * Modele giden şema: ad ve tip. Profil (min/max, benzersiz sayı) gönderilmez. `values` yalnızca kullanıcının
+ * onayla paylaştığı az kategorili sütunlarda bulunur.
+ */
 export interface ColumnPayload {
   name: string;
   type: string;
+  values?: string[];
 }
 
-export function toColumnPayload(columns: ColumnProfile[]): ColumnPayload[] {
-  return columns.map((c) => ({ name: c.name, type: c.type }));
+export function toColumnPayload(columns: ColumnProfile[], shared: Record<string, string[]> = {}): ColumnPayload[] {
+  return columns.map((c) => (shared[c.name]?.length ? { name: c.name, type: c.type, values: shared[c.name] } : { name: c.name, type: c.type }));
 }
 
 export class ApiError extends Error {

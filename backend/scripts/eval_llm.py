@@ -3,7 +3,8 @@
 Tarayıcıdaki akışın aynısını (en fazla 3 onarım) Python DuckDB ile taklit eder ve başarı oranını,
 onarım sayılarını ve süreleri raporlar. Sonuçlar Faz 5 benchmark'ına girdi olur.
 
-Çalıştırma: uv run python scripts/eval_llm.py
+Çalıştırma: uv run python scripts/eval_llm.py [--with-values]
+  --with-values: az kategorili metin sütunlarının değerlerini de gönderir (arayüzdeki onaylı paylaşım)
 """
 
 import asyncio
@@ -22,6 +23,7 @@ from insightflow.service import SqlGenerationFailed, answer
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 DEMO = Path(__file__).resolve().parents[2] / "frontend" / "public" / "demo"
 MAX_REPAIRS = 3
+WITH_VALUES = "--with-values" in sys.argv
 
 CASES = {
     "eticaret_satis.parquet": [
@@ -58,7 +60,15 @@ async def main() -> None:
         con.execute(f"CREATE TABLE data AS SELECT * FROM read_parquet('{(DEMO / file).as_posix()}')")
         con.execute("SET enable_external_access = false")
         columns = [ColumnSchema(name=n, type=t) for n, t, *_ in con.execute("DESCRIBE data").fetchall()]
-        print(f"\n=== {file}")
+        if WITH_VALUES:
+            # Arayüzdeki onaylı paylaşımın aynısı: en fazla 12 farklı değeri olan metin sütunlarının değerleri.
+            for c in columns:
+                if c.type != "VARCHAR":
+                    continue
+                values = [v for (v,) in con.execute(f'SELECT DISTINCT "{c.name}" FROM data WHERE "{c.name}" IS NOT NULL ORDER BY 1 LIMIT 13').fetchall()]
+                if len(values) <= 12:
+                    c.values = [str(v)[:60] for v in values]
+        print(f"\n=== {file}" + (" (örnek değerlerle)" if WITH_VALUES else ""))
         for q in questions:
             stats["total"] += 1
             started = time.perf_counter()

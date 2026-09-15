@@ -94,7 +94,7 @@ export function OutboundPanel({
             <dd className="font-mono text-outbound">
               {t.requests === 0
                 ? "hiçbir şey"
-                : `${t.columns} sütun adı${t.summaryRows > 0 ? ` · ${t.summaryRows} özet satırı` : ""} · ${t.requests} istek`}
+                : `${t.columns} sütun adı${t.sampleValues > 0 ? ` · ${t.sampleValues} örnek değer` : ""}${t.summaryRows > 0 ? ` · ${t.summaryRows} özet satırı` : ""} · ${t.requests} istek`}
             </dd>
           </div>
         </dl>
@@ -120,6 +120,11 @@ export function OutboundPanel({
                 <span className="ml-auto font-mono text-muted-foreground">{statusText(entry.status)}</span>
               </div>
               {typeof entry.body.question === "string" && <p className="text-sm">{entry.body.question}</p>}
+              {Array.isArray(entry.body.columns) && (entry.body.columns as { values?: unknown[] }[]).some((c) => c.values?.length) && (
+                <p className="text-xs text-outbound">
+                  Onayınla {(entry.body.columns as { values?: unknown[] }[]).filter((c) => c.values?.length).length} sütunun örnek değerleri paylaşıldı.
+                </p>
+              )}
               {entry.kind === "summary" && Array.isArray(entry.body.rows) && (
                 <p className="text-xs text-outbound">
                   Onayınla {entry.body.rows.length} satırlık toplu sonuç gönderildi.
