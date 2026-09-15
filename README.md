@@ -78,6 +78,17 @@ Ayrıntılar ve yöntem: [`docs/benchmark/README.md`](docs/benchmark/README.md).
   - En fazla 20 satır × 8 sütun gönderilir.
   - Sunucu, sonucu üreten SQL'in toplulaştırılmış olduğunu yeniden doğrular (`summary.py`). `data`'yı okuyan her SELECT GROUP BY veya toplama fonksiyonu içermeli; pencere fonksiyonu ve alt sorgudaki COUNT sayılmaz.
 
+## Veriyi keşfet
+
+- **Veriyi keşfet** butonu (`src/lib/explore.ts`), soru sormadan hazır içgörüler üretir; **model çağrısı yapmaz**, sorgular tarayıcıda koşar, cümleler sonuçlardan kural tabanlı ve basit istatistikle kurulur.
+- Aylık trend: en yüksek ay, ortalamadan 2 standart sapma aşağıdaki olağan dışı ay, son 3 ay değişimi.
+- En büyük kategorinin payı ve ilk 3 kategorinin toplam payı.
+- Evet/hayır sütununda gruplar arası oran farkı (ör. iade oranı en yüksek Giyim %13,7, genel %7,3).
+- İki ölçü arasındaki korelasyon (tüm veri üzerinden `corr`, grafik için tekrarlanabilir örneklem).
+- Veri kalitesi: birebir tekrar eden kayıtlar ve %5'ten fazla boş değer içeren sütunlar.
+- İçgörü kartları panoya sabitlenebilir, PDF'e girer; **Buna devam et** ile içgörünün SQL'i takip sorusunun bağlamı olur. Keşif sonrası soru kutusu kendiliğinden bir içgörüye bağlanmaz.
+- Üç demo veri setinde yaklaşık 1 sn.
+
 ## Takip soruları
 
 - Son yanıt varsayılan olarak bağlamdır; soru kutusunun üstündeki "Önceki soruyla bağlantılı" etiketi × ile kaldırılabilir, herhangi bir karttaki **Buna devam et** bağlamı o karta çevirir.
@@ -101,8 +112,8 @@ Ayrıntılar ve yöntem: [`docs/benchmark/README.md`](docs/benchmark/README.md).
 | Katman | Komut | Kapsam |
 | --- | --- | --- |
 | Backend | `uv run pytest` | 116 test: doğrulayıcı saldırı korpusu, API, özet toplulaştırma kuralı, örnek değer ve takip geçmişi sınırları, hata temizleme, istek sınırı |
-| Frontend birim | `npm test` | 50 test: grafik seçici, profil, öneri soruları, örnek değer adayları, takip bağlamı zinciri, onarım döngüsü, giden istek kaydı, pano deposu (özet güncelleme dahil), backend uyanma izleyicisi |
-| Uçtan uca | `npm run test:e2e` | 15 senaryo, gerçek Chromium + gerçek DuckDB-WASM (backend taklit edilir): dış istek yok, API aynı alan adından, veri sızıntısı yok, takip soruları, onaylı örnek değerler, motor kilidi, onarım, özet onayı, pano kalıcılığı, PDF rapor indirme, durdurma, uyuyan sunucu, mobil |
+| Frontend birim | `npm test` | 62 test: grafik seçici, profil, öneri soruları, keşif cümleleri ve plan seçimi, örnek değer adayları, takip bağlamı zinciri, onarım döngüsü, giden istek kaydı, pano deposu (özet güncelleme dahil), backend uyanma izleyicisi |
+| Uçtan uca | `npm run test:e2e` | 16 senaryo, gerçek Chromium + gerçek DuckDB-WASM (backend taklit edilir): dış istek yok, API aynı alan adından, veri sızıntısı yok, model çağrısız keşif, takip soruları, onaylı örnek değerler, motor kilidi, onarım, özet onayı, pano kalıcılığı, PDF rapor indirme, durdurma, uyuyan sunucu, mobil |
 | Model | `uv run python scripts/eval_llm.py` | Gerçek Gemini ile 3 veri setinde 16 soru; SQL gerçek DuckDB'de çalıştırılır (`--with-values`: onaylı örnek değerlerle) |
 
 Son model değerlendirmesi (15.09.2026, gemini-3.5-flash-lite, 16 soru): **14 doğru sonuç, 1 doğru red** ("yarın dolar kaç olacak"), **1 yanlış red** ("aylık net kâr"), 0 çalışmayan SQL.

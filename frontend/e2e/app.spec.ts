@@ -102,6 +102,36 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
     await expect(await ask(page, "Bir soru daha")).toContainText("3 dakika sonra");
   });
 
+  test("veriyi keşfet tarayıcıda içgörü üretir, modele istek atmaz; içgörüden takip sorusu sorulabilir", async ({ page }, testInfo) => {
+    const api = await mockApi(page);
+    const apiCalls: string[] = [];
+    page.on("request", (req) => /\/api\/(sql|repair|summary)/.test(req.url()) && apiCalls.push(req.url()));
+    await openDemo(page);
+
+    await page.getByRole("button", { name: /Veriyi keşfet/ }).first().click();
+    const insights = page.locator("article").filter({ hasText: "Otomatik keşif · model kullanılmadı" });
+    await expect(insights).toHaveCount(5);
+    expect(apiCalls).toHaveLength(0);
+
+    const texts = await insights.evaluateAll((els) => els.map((e) => (e.querySelector("h3")?.textContent ?? "") + " — " + (e.querySelector("p.text-sm")?.textContent ?? "")));
+    await testInfo.attach("icgoruler.txt", { body: texts.join("\n") });
+    expect(texts[0]).toMatch(/^Aylık toplam_tutar trendi — En yüksek ay /);
+    expect(texts[1]).toMatch(/payla ilk sırada/);
+    expect(texts[2]).toMatch(/iade_edildi oranı en yüksek Giyim/);
+    expect(texts[4]).toMatch(/^Veri kalitesi — Birebir tekrar eden kayıt yok/);
+    await expect(insights.first().locator("[data-chart] svg")).toBeVisible();
+
+    // Keşif sonrası soru kutusu otomatik olarak bir içgörüye bağlanmaz.
+    await expect(page.locator("form")).not.toContainText("Önceki soruyla bağlantılı");
+
+    // İçgörüden devam: modele içgörünün SQL'i bağlam olarak gider.
+    api.queue("/sql", sqlOk("SELECT date_trunc('month', siparis_tarihi) AS ay, kanal, SUM(toplam_tutar) AS ciro FROM data GROUP BY 1, 2 ORDER BY 1", "line"));
+    await insights.first().getByRole("button", { name: "Buna devam et" }).click();
+    await ask(page, "Bunu kanal bazında kır");
+    const [body] = api.bodies("/sql");
+    expect((body.history as { question: string; sql: string }[])[0]).toMatchObject({ question: "Aylık toplam_tutar trendi", sql: expect.stringContaining("date_trunc") });
+  });
+
   test("takip soruları önceki soru ve SQL'i bağlam olarak gönderir; bağlam kaldırılabilir ve seçilebilir", async ({ page }) => {
     const api = await mockApi(page);
     const sqlA = "SELECT kategori, SUM(toplam_tutar) AS ciro FROM data GROUP BY 1 ORDER BY 2 DESC";

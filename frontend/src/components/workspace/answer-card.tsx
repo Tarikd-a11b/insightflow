@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, BarChart3, Check, ChevronRight, Copy, CornerDownRight, FileDown, Loader2, Pin, PinOff, SearchX, Sparkles, Table2, Wrench } from "lucide-react";
+import { AlertTriangle, BarChart3, Check, ChevronRight, Compass, Copy, CornerDownRight, FileDown, Loader2, Pin, PinOff, SearchX, Sparkles, Table2, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ApiError, requestSummary, summaryPayload } from "@/lib/api";
 import type { AskOutcome, AskStep } from "@/lib/ask";
@@ -19,6 +19,8 @@ export interface Turn {
   step: TurnStep | null;
   /** Takip sorusuysa bağlam alınan tur. */
   parentId?: number;
+  /** "explore": otomatik keşiften gelen, model kullanılmadan üretilmiş içgörü. */
+  origin?: "explore";
   outcome: AskOutcome | null;
 }
 
@@ -63,6 +65,12 @@ export function AnswerCard({
         <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
           <CornerDownRight className="size-3.5 shrink-0 text-outbound" aria-hidden />
           <span className="truncate">&ldquo;{parentQuestion}&rdquo; sorusunun devamı</span>
+        </p>
+      )}
+      {turn.origin === "explore" && (
+        <p className="flex items-center gap-1.5 text-xs text-local">
+          <Compass className="size-3.5" aria-hidden />
+          Otomatik keşif · model kullanılmadı
         </p>
       )}
       <h3 className="font-heading text-lg leading-snug font-medium">{turn.question}</h3>

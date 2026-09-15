@@ -1,11 +1,12 @@
 "use client";
 
-import { ArrowLeft, ArrowUp, CornerDownRight, Loader2, RefreshCw, Square, X } from "lucide-react";
+import { ArrowLeft, ArrowUp, Compass, CornerDownRight, Loader2, RefreshCw, Square, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, checkHealth, toColumnPayload, type ColumnPayload, type HistoryItem } from "@/lib/api";
 import { ask } from "@/lib/ask";
 import { suggestQuestions } from "@/lib/data/questions";
 import { countSharedValues, MAX_SHARED_VALUES, type SharedValues } from "@/lib/data/sample-values";
+import { runExplore } from "@/lib/explore";
 import { buildHistory, latestAnsweredId, type ContextTurn } from "@/lib/followup";
 import { formatBytes, formatInt } from "@/lib/format";
 import { watchHealth, type HealthState } from "@/lib/health-watch";
@@ -45,6 +46,7 @@ export function Workspace() {
   const [valuesDialogOpen, setValuesDialogOpen] = useState(false);
   const [health, setHealth] = useState<HealthState>("checking");
   const [contextChoice, setContextChoice] = useState<ContextChoice>({ mode: "auto" });
+  const [exploring, setExploring] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -70,8 +72,12 @@ export function Workspace() {
     () => turns.map((t) => ({ id: t.id, question: t.question, parentId: t.parentId, sql: t.outcome?.kind === "answer" ? t.outcome.sql : undefined })),
     [turns],
   );
-  const contextId =
-    contextChoice.mode === "none" ? null : contextChoice.mode === "turn" ? contextChoice.id : latestAnsweredId(contextTurns);
+  // Otomatik bağlam yalnızca kullanıcının sorduğu sorulardan gelir; keşif içgörüsüne "Buna devam et" ile açıkça bağlanılır.
+  const autoContextId = useMemo(
+    () => latestAnsweredId(contextTurns.filter((t) => turns.find((x) => x.id === t.id)?.origin !== "explore")),
+    [contextTurns, turns],
+  );
+  const contextId = contextChoice.mode === "none" ? null : contextChoice.mode === "turn" ? contextChoice.id : autoContextId;
   const contextQuestion = contextId === null ? null : (turns.find((t) => t.id === contextId)?.question ?? null);
   // Uyanırken de soru yazılıp gönderilebilir (kuyruğa alınır); yalnızca kesin ulaşılamazlıkta kilitlenir.
   const inputLocked = health === "unreachable" || health === "unconfigured";
@@ -181,6 +187,37 @@ export function Workspace() {
     void runTurn(id, q, columns, history);
   }
 
+  /** Otomatik keşif: tarayıcıda kural tabanlı içgörüler, model çağrısı yok (bkz. lib/explore.ts). */
+  async function explore() {
+    const current = engine.current;
+    if (!ready || !current || exploring) return;
+    setExploring(true);
+    setView("answers");
+    try {
+      const insights = await runExplore(current, ready.profile);
+      if (engine.current !== current) return; // keşif sürerken veri seti kapatıldı
+      const newTurns: Turn[] = insights.map((insight) => ({
+        id: nextId.current++,
+        question: insight.title,
+        origin: "explore",
+        step: null,
+        outcome: {
+          kind: "answer",
+          sql: insight.sql,
+          explanation: insight.headline,
+          chart: insight.chart,
+          limited: false,
+          result: insight.result,
+          repairs: 0,
+          totalMs: insight.ms,
+        },
+      }));
+      setTurns((all) => [...all, ...newTurns]);
+    } finally {
+      setExploring(false);
+    }
+  }
+
   function continueFrom(id: number) {
     setContextChoice({ mode: "turn", id });
     setView("answers");
@@ -265,6 +302,18 @@ export function Workspace() {
       {header}
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
         <aside className="flex flex-col gap-6 border-b bg-panel p-4 lg:w-[22rem] lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-b-0">
+          <button
+            type="button"
+            onClick={() => void explore()}
+            disabled={exploring}
+            className="flex items-center gap-3 rounded-lg border border-local/40 bg-local-soft/60 px-3 py-2.5 text-left transition-colors hover:border-local disabled:opacity-60"
+          >
+            {exploring ? <Loader2 className="size-5 shrink-0 animate-spin text-local" aria-hidden /> : <Compass className="size-5 shrink-0 text-local" aria-hidden />}
+            <span className="flex flex-col">
+              <span className="text-sm font-medium">{exploring ? "Keşfediliyor…" : "Veriyi keşfet"}</span>
+              <span className="text-xs text-muted-foreground">Hazır içgörüler · yapay zekâ kullanılmaz</span>
+            </span>
+          </button>
           <section aria-labelledby="questions-heading" className="flex flex-col gap-2">
             <h2 id="questions-heading" className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
               Hemen sorabileceklerin
@@ -324,9 +373,23 @@ export function Workspace() {
           {view === "answers" && (
             <div className="min-h-0 flex-1 overflow-y-auto pr-1">
               {turns.length === 0 ? (
-                <p className="py-10 text-center text-sm text-muted-foreground">
-                  Soldaki önerilerden birine tıkla ya da aşağıya kendi sorunu yaz.
-                </p>
+                <div className="mx-auto flex max-w-md flex-col items-center gap-3 py-12 text-center">
+                  <Compass className="size-7 text-local" aria-hidden />
+                  <p className="font-medium">Nereden başlayacağını bilmiyor musun?</p>
+                  <p className="text-sm text-muted-foreground">
+                    Keşif; trendleri, en büyük kategorileri, oran farklarını ve veri kalitesini tarayıcında çıkarır. Yapay zekâya hiçbir şey gönderilmez.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void explore()}
+                    disabled={exploring}
+                    className="mt-1 flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
+                  >
+                    {exploring ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Compass className="size-4" aria-hidden />}
+                    {exploring ? "Keşfediliyor…" : "Veriyi keşfet"}
+                  </button>
+                  <p className="text-xs text-muted-foreground">ya da soldaki önerilerden birine tıkla, aşağıya kendi sorunu yaz</p>
+                </div>
               ) : (
                 <div className="mx-auto flex max-w-4xl flex-col gap-6">
                   {turns.map((t) => (
@@ -394,7 +457,7 @@ export function Workspace() {
                 </button>
               </div>
             )}
-            {!contextQuestion && contextChoice.mode === "none" && latestAnsweredId(contextTurns) !== null && !inputLocked && (
+            {!contextQuestion && contextChoice.mode === "none" && autoContextId !== null && !inputLocked && (
               <button
                 type="button"
                 onClick={() => setContextChoice({ mode: "auto" })}

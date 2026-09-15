@@ -21,18 +21,32 @@ function dimensionScore(c: ColumnProfile): number {
   return d <= 12 ? d : 24 - d;
 }
 
+export interface RankedColumns {
+  /** Toplanabilir ölçüler, en anlamlısı başta. */
+  measures: ColumnProfile[];
+  dates: ColumnProfile[];
+  flags: ColumnProfile[];
+  /** Kırılım olarak okunur kategorik metin sütunları, grafikte en okunuru başta. */
+  dims: ColumnProfile[];
+}
+
+/** Öneri soruları ve otomatik keşif aynı sütun seçimini kullanır. */
+export function rankColumns(columns: ColumnProfile[]): RankedColumns {
+  const usable = columns.filter((c) => !c.identifier);
+  return {
+    measures: usable.filter((c) => c.kind === "numeric").sort((a, b) => measureScore(b) - measureScore(a)),
+    dates: usable.filter((c) => c.kind === "temporal"),
+    flags: usable.filter((c) => c.kind === "boolean"),
+    dims: usable.filter((c) => c.kind === "text" && c.categorical).sort((a, b) => dimensionScore(b) - dimensionScore(a)),
+  };
+}
+
 /**
  * Şemadan kural tabanlı örnek sorular üretir. LLM çağrısı yapmaz; yalnızca sütun adı,
  * tipi ve yerelde hesaplanan profil kullanılır.
  */
 export function suggestQuestions(columns: ColumnProfile[], limit = 6): string[] {
-  const usable = columns.filter((c) => !c.identifier);
-  const measures = usable.filter((c) => c.kind === "numeric").sort((a, b) => measureScore(b) - measureScore(a));
-  const dates = usable.filter((c) => c.kind === "temporal");
-  const flags = usable.filter((c) => c.kind === "boolean");
-  const dims = usable
-    .filter((c) => c.kind === "text" && c.categorical)
-    .sort((a, b) => dimensionScore(b) - dimensionScore(a));
+  const { measures, dates, flags, dims } = rankColumns(columns);
 
   const out: string[] = [];
   const add = (q: string) => {
