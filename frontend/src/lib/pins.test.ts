@@ -24,9 +24,12 @@ describe("pinStore", () => {
     expect(listed.map((p) => p.id)).toEqual([second.id, first.id]);
     expect(listed[1].result.rows[0]).toEqual({ kategori: "Giyim", ciro: 10 });
 
+    await pinStore.update(second.id, { summary: "Giyim en yüksek iade oranına sahip." });
+    expect((await pinStore.list())[0].summary).toBe("Giyim en yüksek iade oranına sahip.");
+
     await pinStore.remove(first.id);
     expect((await pinStore.list()).map((p) => p.id)).toEqual([second.id]);
-    expect(listener).toHaveBeenCalledTimes(3);
+    expect(listener).toHaveBeenCalledTimes(4);
     unsubscribe();
   });
 });

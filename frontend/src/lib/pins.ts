@@ -15,6 +15,8 @@ export interface Pin {
   sql: string;
   chart: ChartKind;
   result: QueryResult;
+  /** Kullanıcı onayıyla üretilmiş yönetici özeti (varsa). */
+  summary?: string;
 }
 
 const DB_NAME = "insightflow";
@@ -68,6 +70,12 @@ export const pinStore = {
     await run("readwrite", (s) => s.put(full));
     notify();
     return full;
+  },
+  async update(id: string, patch: Partial<Omit<Pin, "id" | "createdAt">>): Promise<void> {
+    const current = await run<Pin | undefined>("readonly", (s) => s.get(id) as IDBRequest<Pin | undefined>);
+    if (!current) return;
+    await run("readwrite", (s) => s.put({ ...current, ...patch }));
+    notify();
   },
   async remove(id: string): Promise<void> {
     await run("readwrite", (s) => s.delete(id));

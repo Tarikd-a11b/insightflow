@@ -164,6 +164,47 @@ test.describe("şeffaflık, özet ve pano", () => {
     await expect(ledger(page)).toContainText("hiçbir şey");
   });
 
+  test("panodaki analizler PDF rapor olarak tarayıcıda üretilip indirilir", async ({ page }, testInfo) => {
+    const api = await mockApi(page);
+    api.queue(
+      "/sql",
+      sqlOk("SELECT kategori, ROUND(AVG(CASE WHEN iade_edildi THEN 1 ELSE 0 END), 4) AS iade_orani FROM data GROUP BY 1 ORDER BY 2 DESC", "bar", "Kategori bazında iade oranı."),
+      sqlOk("SELECT date_trunc('month', siparis_tarihi) AS ay, SUM(toplam_tutar) AS ciro FROM data GROUP BY 1 ORDER BY 1", "line", "Aylık ciro."),
+      sqlOk("SELECT COUNT(*) AS siparis_sayisi, ROUND(AVG(toplam_tutar), 2) AS ortalama_sepet FROM data", "kpi", "Genel özet."),
+    );
+    api.queue("/summary", { summary: "Giyim %14 ile en yüksek iade oranına sahip; diğer kategoriler %5–6 aralığında." });
+    await openDemo(page);
+
+    for (const q of ["Kategori bazında iade oranı?", "Aylık ciro nasıl değişti?", "Sipariş sayısı ve ortalama sepet?"]) {
+      const card = await ask(page, q);
+      await card.getByRole("button", { name: "Panoya sabitle" }).click();
+      await expect(card.getByRole("button", { name: "Panodan kaldır" })).toBeVisible();
+    }
+    // Özet sabitlemeden sonra çıkarılsa da panodaki kayda işlenmeli.
+    const first = page.locator("article").first();
+    await first.getByRole("button", { name: "Yönetici özeti çıkar" }).click();
+    await first.getByRole("button", { name: "Gönder ve özetle" }).click();
+    await expect(first.locator("blockquote")).toContainText("Giyim");
+
+    await page.getByRole("tab", { name: "Pano (3)" }).click();
+    await expect(page.getByText("Giyim %14 ile en yüksek")).toBeVisible();
+    const requestsBefore = api.bodies("/sql").length + api.bodies("/summary").length;
+
+    const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Raporu indir (PDF)" }).click()]);
+    expect(download.suggestedFilename()).toMatch(/^insightflow-rapor-\d{4}-\d{2}-\d{2}\.pdf$/);
+    const file = testInfo.outputPath("rapor.pdf");
+    await download.saveAs(file);
+
+    const bytes = await import("node:fs").then((fs) => fs.readFileSync(file));
+    expect(bytes.subarray(0, 5).toString()).toBe("%PDF-");
+    expect(bytes.length).toBeGreaterThan(30_000); // gömülü font + vektörel grafikler
+    // Rapor üretimi hiçbir API isteği atmaz.
+    expect(api.bodies("/sql").length + api.bodies("/summary").length).toBe(requestsBefore);
+    await expect(page.getByRole("button", { name: "Raporu indir (PDF)" })).toBeEnabled();
+    await expect(page.getByText("Rapor oluşturulamadı.")).toHaveCount(0);
+    if (process.env.REPORT_COPY_TO) await download.saveAs(process.env.REPORT_COPY_TO);
+  });
+
   test("işlenen soru durdurulabilir", async ({ page }) => {
     const api = await mockApi(page);
     api.queue("/sql", async () => {

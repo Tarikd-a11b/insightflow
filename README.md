@@ -77,7 +77,12 @@ Ayrıntılar ve yöntem: [`docs/benchmark/README.md`](docs/benchmark/README.md).
 ## Şeffaflık ve pano
 
 - **Modele ne gitti?** (`src/lib/outbound-log.ts`): sunucuya giden her istek tek bir `postJson` üzerinden geçer ve gövdesi gönderildiği hâliyle kayda alınır. Üst şeritteki sayılar bu kayıttan türetilir; şeride tıklayınca gövdelerin kendisi açılır.
-- **Pano** (`src/lib/pins.ts`): sabitlenen yanıt, sonuç satırlarıyla birlikte yalnızca tarayıcının IndexedDB'sinde saklanır.
+- **Pano** (`src/lib/pins.ts`): sabitlenen yanıt, sonuç satırlarıyla (ve varsa yönetici özetiyle) birlikte yalnızca tarayıcının IndexedDB'sinde saklanır.
+- **PDF rapor** (`src/lib/report.ts`): panodaki tüm analizler ya da tek bir yanıt, tarayıcıda PDF'e dönüştürülüp indirilir; sunucuya istek atılmaz.
+  - İçerik: kapak ve gizlilik notu, her analiz için soru, açıklama, vektörel grafik / KPI / tablo, yönetici özeti ve SQL.
+  - Grafikler ekrandakiyle aynı ayar kodundan (`chart-option.ts`) sabit baskı temasıyla üretilir (ECharts SSR → SVG → svg2pdf).
+  - Türkçe karakterler için IBM Plex Sans gömülür (OFL lisansı `public/fonts/report/OFL.txt`); metin PDF'te aranabilir.
+  - Rapor kodu (jsPDF) yalnızca butona basınca yüklenir.
 - Soru "Durdur" ile iptal edilebilir. Backend uyuyorsa "uyanıyor" gösterilir ve kendiliğinden yeniden denenir; 90 sn'de yanıt gelmezse neden gösterilir.
 
 ## Testler
@@ -85,8 +90,8 @@ Ayrıntılar ve yöntem: [`docs/benchmark/README.md`](docs/benchmark/README.md).
 | Katman | Komut | Kapsam |
 | --- | --- | --- |
 | Backend | `uv run pytest` | 109 test: doğrulayıcı saldırı korpusu, API, özet toplulaştırma kuralı, hata temizleme, istek sınırı |
-| Frontend birim | `npm test` | 41 test: grafik seçici, profil, öneri soruları, onarım döngüsü, giden istek kaydı, pano deposu, backend uyanma izleyicisi |
-| Uçtan uca | `npm run test:e2e` | 12 senaryo, gerçek Chromium + gerçek DuckDB-WASM (backend taklit edilir): dış istek yok, API aynı alan adından, veri sızıntısı yok, motor kilidi, onarım, özet onayı, pano kalıcılığı, durdurma, uyuyan sunucu, mobil |
+| Frontend birim | `npm test` | 41 test: grafik seçici, profil, öneri soruları, onarım döngüsü, giden istek kaydı, pano deposu (özet güncelleme dahil), backend uyanma izleyicisi |
+| Uçtan uca | `npm run test:e2e` | 13 senaryo, gerçek Chromium + gerçek DuckDB-WASM (backend taklit edilir): dış istek yok, API aynı alan adından, veri sızıntısı yok, motor kilidi, onarım, özet onayı, pano kalıcılığı, PDF rapor indirme, durdurma, uyuyan sunucu, mobil |
 | Model | `uv run python scripts/eval_llm.py` | Gerçek Gemini ile 3 veri setinde 16 soru; SQL gerçek DuckDB'de çalıştırılır |
 
 Son model değerlendirmesi (15.09.2026, gemini-3.5-flash-lite, 16 soru): **14 doğru sonuç, 1 doğru red** ("yarın dolar kaç olacak"), **1 yanlış red** ("aylık net kâr"), 0 çalışmayan SQL.

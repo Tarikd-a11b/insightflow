@@ -1,11 +1,12 @@
 "use client";
 
-import { AlertTriangle, BarChart3, Check, ChevronRight, Copy, Loader2, Pin, PinOff, SearchX, Sparkles, Table2, Wrench } from "lucide-react";
+import { AlertTriangle, BarChart3, Check, ChevronRight, Copy, FileDown, Loader2, Pin, PinOff, SearchX, Sparkles, Table2, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ApiError, requestSummary, summaryPayload } from "@/lib/api";
 import type { AskOutcome, AskStep } from "@/lib/ask";
 import { formatInt } from "@/lib/format";
 import { pinStore } from "@/lib/pins";
+import type { ReportItem } from "@/lib/report";
 import { cn } from "@/lib/utils";
 import { hasChart, ResultView } from "./result-view";
 
@@ -75,7 +76,15 @@ export function AnswerCard({ turn, datasetName, onStop }: { turn: Turn; datasetN
 function AnswerBody({ question, answer, datasetName }: { question: string; answer: Answer; datasetName: string }) {
   const chartable = useMemo(() => hasChart(answer.chart, answer.result), [answer]);
   const [view, setView] = useState<"chart" | "table">(chartable ? "chart" : "table");
+  const [pinId, setPinId] = useState<string | null>(null);
+  const [summary, setSummary] = useState<string | undefined>(undefined);
   const empty = answer.result.rows.length === 0;
+
+  function onSummary(text: string) {
+    setSummary(text);
+    // Yanıt önce sabitlenip özet sonra çıkarıldıysa panodaki kayıt da özetle güncellenir.
+    if (pinId) void pinStore.update(pinId, { summary: text }).catch(() => {});
+  }
 
   return (
     <>
@@ -111,7 +120,8 @@ function AnswerBody({ question, answer, datasetName }: { question: string; answe
                 ))}
               </div>
             )}
-            <PinButton question={question} answer={answer} datasetName={datasetName} />
+            <PinButton question={question} answer={answer} datasetName={datasetName} pinId={pinId} onPinChange={setPinId} summary={summary} />
+            <PdfButton item={{ question, datasetName, explanation: answer.explanation, sql: answer.sql, chart: answer.chart, result: answer.result, summary }} />
           </div>
           <ResultView result={answer.result} chart={answer.chart} mode={view === "table" ? "table" : "auto"} />
         </>
@@ -132,14 +142,27 @@ function AnswerBody({ question, answer, datasetName }: { question: string; answe
         )}
       </div>
 
-      {!empty && <ExecutiveSummary question={question} answer={answer} />}
+      {!empty && <ExecutiveSummary question={question} answer={answer} onDone={onSummary} />}
       <SqlPeek sql={answer.sql} />
     </>
   );
 }
 
-function PinButton({ question, answer, datasetName }: { question: string; answer: Answer; datasetName: string }) {
-  const [pinId, setPinId] = useState<string | null>(null);
+function PinButton({
+  question,
+  answer,
+  datasetName,
+  pinId,
+  onPinChange: setPinId,
+  summary,
+}: {
+  question: string;
+  answer: Answer;
+  datasetName: string;
+  pinId: string | null;
+  onPinChange: (id: string | null) => void;
+  summary?: string;
+}) {
   const [failed, setFailed] = useState(false);
 
   async function toggle() {
@@ -156,6 +179,7 @@ function PinButton({ question, answer, datasetName }: { question: string; answer
           sql: answer.sql,
           chart: answer.chart,
           result: answer.result,
+          summary,
         });
         setPinId(pin.id);
       }
@@ -183,6 +207,37 @@ function PinButton({ question, answer, datasetName }: { question: string; answer
   );
 }
 
+/** Tek analizlik PDF rapor. Rapor kodu (jsPDF) yalnızca tıklanınca yüklenir. */
+function PdfButton({ item }: { item: Omit<ReportItem, "createdAt"> }) {
+  const [state, setState] = useState<"idle" | "busy" | "error">("idle");
+
+  async function download() {
+    setState("busy");
+    try {
+      const { downloadReport } = await import("@/lib/report");
+      await downloadReport([{ ...item, createdAt: Date.now() }]);
+      setState("idle");
+    } catch {
+      setState("error");
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => void download()}
+        disabled={state === "busy"}
+        className="flex items-center gap-1.5 rounded-md border bg-card px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-60"
+      >
+        {state === "busy" ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <FileDown className="size-3.5" aria-hidden />}
+        {state === "busy" ? "PDF hazırlanıyor…" : "PDF indir"}
+      </button>
+      {state === "error" && <span className="text-xs text-destructive">PDF oluşturulamadı.</span>}
+    </>
+  );
+}
+
 type SummaryState =
   | { status: "idle" }
   | { status: "confirm" }
@@ -194,7 +249,7 @@ type SummaryState =
  * Veri sözleşmesinin tek istisnası: kullanıcı onaylarsa toplu sonuç tablosu modele gider.
  * Onaydan önce gidecek içerik açıkça gösterilir; sunucu ayrıca SQL'in toplulaştırılmış olduğunu doğrular.
  */
-function ExecutiveSummary({ question, answer }: { question: string; answer: Answer }) {
+function ExecutiveSummary({ question, answer, onDone }: { question: string; answer: Answer; onDone: (text: string) => void }) {
   const [state, setState] = useState<SummaryState>({ status: "idle" });
   const payload = useMemo(() => summaryPayload(answer.result), [answer]);
 
@@ -208,6 +263,7 @@ function ExecutiveSummary({ question, answer }: { question: string; answer: Answ
     try {
       const text = await requestSummary({ question, sql: answer.sql, columns: payload.columns, rows: payload.rows });
       setState({ status: "done", text, rows: payload.rows.length });
+      onDone(text);
     } catch (err) {
       setState({ status: "error", message: err instanceof ApiError ? err.message : "Özet oluşturulamadı." });
     }
