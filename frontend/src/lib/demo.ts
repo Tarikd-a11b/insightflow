@@ -7,6 +7,12 @@ export interface DemoDataset {
   sample: string;
   /** Kartta gösterilecek kısa etiket (ör. "2 tablo"). */
   badge?: string;
+  /** Dosyadaki gerçek satır sayısı (çoklu tabloda toplam). Kartta gösterilir. */
+  rows: number;
+  /** Gerçek kolon sayısı (çoklu tabloda toplam). */
+  columns: number;
+  /** Dosya biçimi etiketi. */
+  format: string;
 }
 
 export const DEMO_DATASETS: DemoDataset[] = [
@@ -16,6 +22,9 @@ export const DEMO_DATASETS: DemoDataset[] = [
     title: "E-ticaret satışları",
     description: "2024–2025 siparişleri: şehir, kategori, kanal, indirim, iade.",
     sample: "Kasım kampanyası hangi kategoriyi büyüttü?",
+    rows: 26_403,
+    columns: 11,
+    format: "parquet",
   },
   {
     id: "saas",
@@ -23,6 +32,9 @@ export const DEMO_DATASETS: DemoDataset[] = [
     title: "SaaS müşteri kaybı",
     description: "6.200 müşteri: plan, bölge, destek talebi, NPS, churn.",
     sample: "Hangi planda müşteri kaybı en yüksek?",
+    rows: 6_200,
+    columns: 11,
+    format: "parquet",
   },
   {
     id: "finans",
@@ -30,6 +42,9 @@ export const DEMO_DATASETS: DemoDataset[] = [
     title: "Gelir & gider",
     description: "Departman ve kalem bazında iki yıllık işlem kayıtları.",
     sample: "Aylık net kâr nasıl değişti?",
+    rows: 1_068,
+    columns: 6,
+    format: "parquet",
   },
   {
     id: "magaza",
@@ -38,8 +53,14 @@ export const DEMO_DATASETS: DemoDataset[] = [
     description: "13.530 sipariş ve 1.500 müşteri, musteri_id ile birleşiyor.",
     sample: "Hangi segmentteki müşteriler en çok harcıyor?",
     badge: "2 tablo",
+    rows: 15_030,
+    columns: 11,
+    format: "parquet ×2",
   },
 ];
+
+/** Hazır setlerdeki toplam satır — boş durumda "elinin altındaki veri" ölçüsü. */
+export const DEMO_TOTAL_ROWS = DEMO_DATASETS.reduce((sum, d) => sum + d.rows, 0);
 
 export async function fetchDemoFiles(demo: DemoDataset): Promise<File[]> {
   return Promise.all(
