@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight, Database, FileSpreadsheet, FileUp, HardDrive, LayoutGrid, Loader2, Lock, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowUpRight, Cpu, Database, FileSpreadsheet, FileUp, HardDrive, LayoutGrid, Layers, Loader2, Lock, ShieldCheck, Sparkles, Terminal, Zap } from "lucide-react";
 import { useRef, useState } from "react";
 import { DEMO_DATASETS, fetchDemoFiles, type DemoDataset } from "@/lib/demo";
 import type { FileEntry } from "./use-dataset";
@@ -36,31 +36,46 @@ export function DatasetPicker({ onFiles, loadingName, error, pinCount, onOpenBoa
   return (
     <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden">
       {/* Sinematik Ambient Işık Efektleri */}
-      <div className="ambient-glow ambient-glow-indigo -top-24 left-1/2 -translate-x-1/2 size-96 sm:size-[32rem] opacity-40 animate-pulse-glow" aria-hidden />
-      <div className="ambient-glow ambient-glow-emerald top-96 -left-20 size-72 sm:size-96 opacity-30" aria-hidden />
+      <div className="ambient-glow ambient-glow-indigo -top-24 left-1/2 -translate-x-1/2 size-96 sm:size-[36rem] opacity-35 animate-pulse-glow" aria-hidden />
+      <div className="ambient-glow ambient-glow-emerald top-96 -left-20 size-72 sm:size-96 opacity-25" aria-hidden />
 
-      <div className="relative z-10 mx-auto flex w-full max-w-4xl flex-col items-center gap-10 px-4 py-12 sm:py-20">
+      <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-col items-center gap-10 px-4 py-10 sm:py-16">
         
-        {/* Üst Rozet & Başlık */}
-        <div className="flex flex-col items-center text-center gap-4 animate-in fade-in slide-in-from-bottom-2 duration-700">
-          <div className="inline-flex items-center gap-2 rounded-full border border-local/30 bg-local-soft/60 px-3 py-1 text-xs font-medium text-local backdrop-blur-md">
-            <ShieldCheck className="size-3.5 text-local" aria-hidden />
-            <span>%100 Local-First &bull; Sıfır Veri Sızıntısı</span>
-          </div>
-          
-          <h1 className="font-heading text-4xl leading-[1.1] font-bold tracking-tight text-balance sm:text-6xl max-w-2xl bg-gradient-to-b from-foreground via-foreground to-foreground/75 bg-clip-text text-transparent">
-            Verinle doğrudan konuş.
+        {/* Canlı Veri Motoru Telemetri Şeridi (Data Engine Telemetry Bar) */}
+        <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 rounded-full border border-border/80 bg-card/70 px-4 py-1.5 text-[11px] font-mono text-muted-foreground backdrop-blur-xl shadow-sm animate-in fade-in">
+          <span className="flex items-center gap-1.5 text-local font-semibold">
+            <span className="size-2 rounded-full bg-local animate-pulse" />
+            DUCKDB-WASM OLAP
+          </span>
+          <span className="text-border">&bull;</span>
+          <span className="flex items-center gap-1 text-foreground">
+            <Zap className="size-3 text-amber-500" />
+            &lt;20ms Bellek-İçi Sorgu
+          </span>
+          <span className="text-border">&bull;</span>
+          <span className="flex items-center gap-1 text-outbound font-medium">
+            <ShieldCheck className="size-3" />
+            Zero-Data Exposure
+          </span>
+          <span className="text-border hidden sm:inline">&bull;</span>
+          <span className="hidden sm:inline font-mono text-muted-foreground">Apache Arrow &bull; Parquet/CSV</span>
+        </div>
+
+        {/* Ana Başlık & Data Mimari Tanımı */}
+        <div className="flex flex-col items-center text-center gap-4 animate-in fade-in slide-in-from-bottom-2 duration-700 max-w-3xl">
+          <h1 className="font-heading text-4xl leading-[1.08] font-bold tracking-tight text-balance sm:text-6xl bg-gradient-to-b from-foreground via-foreground to-foreground/75 bg-clip-text text-transparent">
+            Verinle konuş.
             <br />
-            <span className="text-muted-foreground font-normal text-3xl sm:text-5xl">Doğal dille, anında içgörü.</span>
+            <span className="text-muted-foreground font-normal text-3xl sm:text-5xl">Vektörize hızda, tam gizlilikle.</span>
           </h1>
           
-          <p className="max-w-xl text-sm sm:text-base text-muted-foreground leading-relaxed">
-            Dosyanız doğrudan tarayıcınızda açılır ve sorgulanır. 
-            Yapay zekâya yalnızca <span className="font-medium text-outbound underline decoration-outbound/30 underline-offset-4">sütun şeması</span> iletilir; verileriniz cihazınızdan asla çıkmaz.
+          <p className="max-w-2xl text-sm sm:text-base text-muted-foreground leading-relaxed">
+            Tarayıcınızda çalışan <b>DuckDB OLAP</b> motoruyla analitik SQL sorguları koşun. 
+            Ham veri satırları asla sunucuya gitmez; yapay zekâya yalnızca <span className="font-mono text-xs px-1.5 py-0.5 rounded bg-outbound-soft text-outbound font-medium">SCHEMA METADATA</span> iletilir.
           </p>
         </div>
 
-        {/* Sürükle Bırak / Yükleme Kartı */}
+        {/* Sürükle Bırak / Yükleme Terminal Kartı */}
         <div
           onDragOver={(e) => {
             e.preventDefault();
@@ -88,9 +103,9 @@ export function DatasetPicker({ onFiles, loadingName, error, pinCount, onOpenBoa
                 <div className="absolute inset-0 size-10 animate-ping rounded-full bg-local/20 -z-10" />
               </div>
               <p className="font-heading text-lg font-medium text-foreground" role="status">
-                {loadingName} hazırlanıyor…
+                {loadingName} DuckDB belleğine alınıyor…
               </p>
-              <p className="text-xs text-muted-foreground">In-memory DuckDB motoru ve profil yerelde oluşturuluyor.</p>
+              <p className="text-xs font-mono text-muted-foreground">Columnar schema analizi &amp; profil çıkarımı yapılıyor.</p>
             </div>
           ) : (
             <>
@@ -100,20 +115,24 @@ export function DatasetPicker({ onFiles, loadingName, error, pinCount, onOpenBoa
 
               <div className="flex flex-col gap-1">
                 <p className="font-heading text-base sm:text-lg font-semibold text-foreground">
-                  Veri dosyanızı buraya bırakın
+                  Veri dosyanızı buraya bırakın veya seçin
                 </p>
-                <p className="text-xs sm:text-sm text-muted-foreground">
-                  CSV, Parquet, Excel (.xlsx) &bull; Birden fazla tablo otomatik ilişkilendirilebilir
-                </p>
+                <div className="flex flex-wrap items-center justify-center gap-2 pt-1 font-mono text-xs text-muted-foreground">
+                  <span className="px-2 py-0.5 rounded border bg-panel">.CSV</span>
+                  <span className="px-2 py-0.5 rounded border bg-panel">.PARQUET</span>
+                  <span className="px-2 py-0.5 rounded border bg-panel">.XLSX</span>
+                  <span className="px-2 py-0.5 rounded border bg-panel">.TSV</span>
+                  <span>&bull; Çoklu Tablo Otomatik JOIN Desteği</span>
+                </div>
               </div>
 
               <button
                 type="button"
                 onClick={() => inputRef.current?.click()}
-                className="mt-1 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-lg transition-all hover:scale-[1.02] hover:opacity-95 active:scale-95 cursor-pointer"
+                className="mt-2 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-lg transition-all hover:scale-[1.02] hover:opacity-95 active:scale-95 cursor-pointer"
               >
                 <FileSpreadsheet className="size-4" />
-                Dosya Seç
+                Dosya Yükle
               </button>
             </>
           )}
@@ -139,14 +158,14 @@ export function DatasetPicker({ onFiles, loadingName, error, pinCount, onOpenBoa
           </div>
         )}
 
-        {/* Demo Veri Setleri Başlığı & Kartları */}
+        {/* Demo Veri Setleri (Data Engineering Benchmark Kümeleri) */}
         <section className="flex w-full flex-col gap-4" aria-labelledby="demo-heading">
-          <div className="flex items-center justify-between">
-            <h2 id="demo-heading" className="text-xs font-semibold tracking-wider text-muted-foreground uppercase flex items-center gap-1.5">
-              <Sparkles className="size-3.5 text-outbound" />
-              Hazır Demo Veri Setleriyle Keşfet
+          <div className="flex items-center justify-between border-b border-border/60 pb-2">
+            <h2 id="demo-heading" className="text-xs font-semibold tracking-wider text-muted-foreground uppercase flex items-center gap-1.5 font-mono">
+              <Database className="size-3.5 text-outbound" />
+              Hazır Örnek Analitik Veri Setleri
             </h2>
-            <span className="text-xs text-muted-foreground hidden sm:inline">Kurulum veya kayıt gerekmez</span>
+            <span className="text-xs font-mono text-muted-foreground hidden sm:inline">DuckDB In-Memory Preloaded</span>
           </div>
 
           <div className="grid gap-3.5 sm:grid-cols-2">

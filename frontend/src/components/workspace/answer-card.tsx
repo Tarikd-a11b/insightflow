@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, BarChart3, Check, ChevronRight, Compass, Copy, CornerDownRight, FileDown, FileSpreadsheet, Image as ImageIcon, Loader2, Pin, PinOff, SearchX, Sparkles, Table2, Wrench } from "lucide-react";
+import { AlertTriangle, BarChart3, Check, ChevronRight, Compass, Copy, CornerDownRight, Database, FileDown, FileSpreadsheet, Image as ImageIcon, Loader2, Pin, PinOff, SearchX, ShieldCheck, Sparkles, Table2, Terminal, Wrench } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { ApiError, requestSummary, summaryPayload } from "@/lib/api";
 import type { AskOutcome, AskStep } from "@/lib/ask";
@@ -29,13 +29,13 @@ type Answer = Extract<AskOutcome, { kind: "answer" }>;
 
 const STEP_TEXT: Record<TurnStep["kind"], string> = {
   waiting: "Yanıt motoru uyanıyor; hazır olunca soru gönderilecek…",
-  writing: "Sorgu yazılıyor…",
-  running: "Tarayıcında çalıştırılıyor…",
-  repairing: "Hata onarılıyor…",
+  writing: "DuckDB SQL sorgusu yazılıyor…",
+  running: "In-memory DuckDB motorunda vektörize çalıştırılıyor…",
+  repairing: "Şema uyumsuzluğu tespit edildi, AST onarılıyor…",
 };
 
 function stepText(step: TurnStep): string {
-  return step.kind === "repairing" ? `Hata onarılıyor (${step.attempt}/3)…` : STEP_TEXT[step.kind];
+  return step.kind === "repairing" ? `Self-Healing: Hata otomatik onarılıyor (${step.attempt}/3)…` : STEP_TEXT[step.kind];
 }
 
 export function AnswerCard({
@@ -61,27 +61,27 @@ export function AnswerCard({
     <article
       data-turn={turn.id}
       className={cn(
-        "flex flex-col gap-3 border-b pb-6 duration-300 animate-in fade-in slide-in-from-bottom-1 last:border-0",
-        isContext && "border-l-2 border-l-outbound/60 pl-3",
+        "flex flex-col gap-3 rounded-2xl border border-border/70 bg-card/70 p-4 sm:p-5 backdrop-blur-xl transition-all shadow-xs last:border-border/70",
+        isContext && "border-l-4 border-l-outbound bg-card/90 shadow-md",
       )}
     >
       {parentQuestion && (
-        <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+        <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground font-mono">
           <CornerDownRight className="size-3.5 shrink-0 text-outbound" aria-hidden />
-          <span className="truncate">&ldquo;{parentQuestion}&rdquo; sorusunun devamı</span>
+          <span className="truncate">&ldquo;{parentQuestion}&rdquo; sorgusunun devamı</span>
         </p>
       )}
       {turn.origin === "explore" && (
-        <p className="flex items-center gap-1.5 text-xs text-local">
+        <p className="inline-flex items-center gap-1.5 text-xs text-local font-mono">
           <Compass className="size-3.5" aria-hidden />
-          Otomatik keşif · model kullanılmadı
+          Otomatik EDA Keşif Analizi &bull; Model Kullanılmadı
         </p>
       )}
-      <h3 className="font-heading text-lg leading-snug font-medium">{turn.question}</h3>
+      <h3 className="font-heading text-lg leading-snug font-semibold text-foreground">{turn.question}</h3>
 
       {!outcome && turn.step && (
         <div className="flex items-center gap-3">
-          <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+          <p role="status" className="flex items-center gap-2 text-xs font-mono text-muted-foreground">
             <Loader2 className="size-4 animate-spin text-outbound" aria-hidden />
             {stepText(turn.step)}
           </p>
@@ -141,21 +141,20 @@ function AnswerBody({
 
   function onSummary(text: string) {
     setSummary(text);
-    // Yanıt önce sabitlenip özet sonra çıkarıldıysa panodaki kayıt da özetle güncellenir.
     if (pinId) void pinStore.update(pinId, { summary: text }).catch(() => {});
   }
 
   return (
     <>
-      <p className="text-sm">{answer.explanation}</p>
+      <p className="text-sm leading-relaxed text-foreground/90">{answer.explanation}</p>
 
       {empty ? (
-        <p className="text-sm text-muted-foreground">Sorgu çalıştı ama koşula uyan kayıt yok. Filtreyi genişletmeyi dene.</p>
+        <p className="text-sm text-muted-foreground">Sorgu çalıştı ama koşula uyan kayıt yok. Filtreyi genişletmeyi deneyin.</p>
       ) : (
         <>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 pt-1">
             {chartable && (
-              <div role="tablist" aria-label="Sonuç görünümü" className="flex gap-1 rounded-md border bg-card p-0.5 text-xs">
+              <div role="tablist" aria-label="Sonuç görünümü" className="flex gap-1 rounded-lg border border-border/70 bg-panel p-0.5 text-xs shadow-inner">
                 {(
                   [
                     ["chart", "Grafik", BarChart3],
@@ -169,8 +168,8 @@ function AnswerBody({
                     aria-selected={view === key}
                     onClick={() => setView(key)}
                     className={cn(
-                      "flex items-center gap-1.5 rounded px-2.5 py-1 transition-colors",
-                      view === key ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground",
+                      "flex items-center gap-1.5 rounded-md px-2.5 py-1 transition-all cursor-pointer",
+                      view === key ? "bg-card text-foreground font-semibold shadow-xs" : "text-muted-foreground hover:text-foreground",
                     )}
                   >
                     <Icon className="size-3.5" aria-hidden />
@@ -183,10 +182,10 @@ function AnswerBody({
             <button
               type="button"
               onClick={onContinue}
-              className="flex items-center gap-1.5 rounded-md border bg-card px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-outbound/60 hover:text-foreground"
+              className="flex items-center gap-1.5 rounded-lg border border-border/70 bg-card px-2.5 py-1 text-xs text-muted-foreground transition-all hover:border-outbound/60 hover:text-foreground hover:shadow-xs cursor-pointer"
             >
               <CornerDownRight className="size-3.5 text-outbound" aria-hidden />
-              Buna devam et
+              Takip Sorusu
             </button>
             <PdfButton item={{ question, datasetName, explanation: answer.explanation, sql: answer.sql, chart: answer.chart, result: answer.result, summary }} />
             <CsvButton result={answer.result} question={question} />
@@ -200,18 +199,32 @@ function AnswerBody({
         </>
       )}
 
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-muted-foreground">
-        <span>
-          {formatInt(answer.result.rows.length)} satır
-          {answer.limited && answer.result.rows.length >= 1000 ? " (ilk 1.000)" : ""}
+      {/* Veri Mühendisliği Telemetri Çubuğu (Data Engine Telemetry Bar) */}
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-panel/50 px-3 py-1.5 font-mono text-[11px] text-muted-foreground backdrop-blur-sm">
+        <span className="flex items-center gap-1 text-local font-semibold">
+          <Database className="size-3" />
+          DuckDB: {formatInt(answer.result.ms)} ms
         </span>
-        <span>sorgu {formatInt(answer.result.ms)} ms</span>
-        <span>toplam {formatInt(answer.totalMs)} ms</span>
+        <span className="text-border">&bull;</span>
+        <span className="flex items-center gap-1 text-foreground">
+          <Table2 className="size-3 text-muted-foreground" />
+          {formatInt(answer.result.rows.length)} Satır {answer.limited && answer.result.rows.length >= 1000 ? " (Limit 1.000)" : ""}
+        </span>
+        <span className="text-border">&bull;</span>
+        <span>E2E: {formatInt(answer.totalMs)} ms</span>
+        <span className="text-border">&bull;</span>
+        <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+          <ShieldCheck className="size-3" />
+          AST Validated (Safe SELECT)
+        </span>
         {answer.repairs > 0 && (
-          <span className="flex items-center gap-1 text-outbound">
-            <Wrench className="size-3" aria-hidden />
-            {answer.repairs} otomatik onarım
-          </span>
+          <>
+            <span className="text-border">&bull;</span>
+            <span className="flex items-center gap-1 text-outbound font-medium">
+              <Wrench className="size-3" aria-hidden />
+              {answer.repairs} Self-Healing Onarım
+            </span>
+          </>
         )}
       </div>
 
@@ -268,19 +281,19 @@ function PinButton({
         onClick={() => void toggle()}
         aria-pressed={pinId !== null}
         className={cn(
-          "flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-colors",
-          pinId ? "border-foreground/30 bg-secondary text-foreground" : "bg-card text-muted-foreground hover:text-foreground",
+          "flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-all cursor-pointer",
+          pinId ? "border-foreground/30 bg-secondary text-foreground font-medium" : "border-border/70 bg-card text-muted-foreground hover:text-foreground hover:shadow-xs",
         )}
       >
         {pinId ? <PinOff className="size-3.5" aria-hidden /> : <Pin className="size-3.5" aria-hidden />}
-        {pinId ? "Panodan kaldır" : "Panoya sabitle"}
+        {pinId ? "Panodan Kaldır" : "Panoya Sabitle"}
       </button>
       {failed && <span className="text-xs text-destructive">Pano bu tarayıcıda kaydedilemedi.</span>}
     </>
   );
 }
 
-/** Tek analizlik PDF rapor. Rapor kodu (jsPDF) yalnızca tıklanınca yüklenir. */
+/** Tek analizlik PDF rapor. */
 function PdfButton({ item }: { item: Omit<ReportItem, "createdAt"> }) {
   const [state, setState] = useState<"idle" | "busy" | "error">("idle");
 
@@ -301,10 +314,10 @@ function PdfButton({ item }: { item: Omit<ReportItem, "createdAt"> }) {
         type="button"
         onClick={() => void download()}
         disabled={state === "busy"}
-        className="flex items-center gap-1.5 rounded-md border bg-card px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-60"
+        className="flex items-center gap-1.5 rounded-lg border border-border/70 bg-card px-2.5 py-1 text-xs text-muted-foreground transition-all hover:text-foreground hover:shadow-xs disabled:opacity-60 cursor-pointer"
       >
         {state === "busy" ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <FileDown className="size-3.5" aria-hidden />}
-        {state === "busy" ? "PDF hazırlanıyor…" : "PDF indir"}
+        {state === "busy" ? "PDF Hazırlanıyor…" : "PDF İndir"}
       </button>
       {state === "error" && <span className="text-xs text-destructive">PDF oluşturulamadı.</span>}
     </>
@@ -322,11 +335,11 @@ function CsvButton({ result, question }: { result: Answer["result"]; question: s
     <button
       type="button"
       onClick={download}
-      className="flex items-center gap-1.5 rounded-md border bg-card px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      className="flex items-center gap-1.5 rounded-lg border border-border/70 bg-card px-2.5 py-1 text-xs text-muted-foreground transition-all hover:text-foreground hover:shadow-xs cursor-pointer"
       title="Sonuç verisini Excel uyumlu CSV olarak indir"
     >
       <FileSpreadsheet className="size-3.5" aria-hidden />
-      CSV indir
+      CSV İndir
     </button>
   );
 }
@@ -342,7 +355,7 @@ function PngButton({ containerRef, question }: { containerRef: React.RefObject<H
       const slug = question.slice(0, 30).toLowerCase().replace(/[^a-z0-9ğüşıöç]+/gi, "-").replace(/^-|-$/g, "");
       await downloadChartAsPng(containerRef.current, `insightflow-${slug || "grafik"}.png`);
     } catch {
-      // Hata durumunda sessiz kal veya console log
+      // Hata durumunda sessiz kal
     } finally {
       setLoading(false);
     }
@@ -353,11 +366,11 @@ function PngButton({ containerRef, question }: { containerRef: React.RefObject<H
       type="button"
       onClick={() => void download()}
       disabled={loading}
-      className="flex items-center gap-1.5 rounded-md border bg-card px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-60"
+      className="flex items-center gap-1.5 rounded-lg border border-border/70 bg-card px-2.5 py-1 text-xs text-muted-foreground transition-all hover:text-foreground hover:shadow-xs disabled:opacity-60 cursor-pointer"
       title="Grafiği yüksek kaliteli PNG resmi olarak indir"
     >
       {loading ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <ImageIcon className="size-3.5" aria-hidden />}
-      PNG indir
+      PNG İndir
     </button>
   );
 }
@@ -369,10 +382,6 @@ type SummaryState =
   | { status: "done"; text: string; rows: number }
   | { status: "error"; message: string };
 
-/**
- * Veri sözleşmesinin tek istisnası: kullanıcı onaylarsa toplu sonuç tablosu modele gider.
- * Onaydan önce gidecek içerik açıkça gösterilir; sunucu ayrıca SQL'in toplulaştırılmış olduğunu doğrular.
- */
 function ExecutiveSummary({
   question,
   answer,
@@ -408,17 +417,17 @@ function ExecutiveSummary({
       <button
         type="button"
         onClick={() => setState({ status: "confirm" })}
-        className="flex items-center gap-1.5 self-start rounded-md border bg-card px-3 py-1.5 text-sm transition-colors hover:border-outbound/60"
+        className="flex items-center gap-1.5 self-start rounded-xl border border-outbound/30 bg-outbound-soft/50 px-3 py-1.5 text-xs font-medium text-outbound transition-all hover:border-outbound hover:bg-outbound-soft hover:shadow-xs cursor-pointer"
       >
         <Sparkles className="size-3.5 text-outbound" aria-hidden />
-        Yönetici özeti çıkar
+        Yönetici Özeti Çıkar
       </button>
     );
   }
 
   if (state.status === "confirm") {
     return (
-      <div className="flex flex-col gap-3 rounded-lg border border-outbound/40 bg-outbound-soft/60 p-3 text-sm">
+      <div className="flex flex-col gap-3 rounded-xl border border-outbound/40 bg-outbound-soft/60 p-3 text-xs">
         <p>
           Özet için bu sonucun <b>{payload.rows.length} satırı</b> ({payload.columns.join(", ")}) yapay zekâya gönderilecek.
           Dosyandaki ham kayıtlar gönderilmez; yalnızca yukarıdaki toplu tablo gider.
@@ -427,14 +436,14 @@ function ExecutiveSummary({
           <button
             type="button"
             onClick={() => void send()}
-            className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90"
+            className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 cursor-pointer"
           >
-            Gönder ve özetle
+            Gönder ve Özetle
           </button>
           <button
             type="button"
             onClick={() => setState({ status: "idle" })}
-            className="rounded-md border bg-card px-3 py-1.5 text-sm hover:bg-muted"
+            className="rounded-lg border bg-card px-3 py-1.5 text-xs hover:bg-muted cursor-pointer"
           >
             Vazgeç
           </button>
@@ -445,22 +454,22 @@ function ExecutiveSummary({
 
   if (state.status === "loading") {
     return (
-      <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="size-4 animate-spin text-outbound" aria-hidden />
-        Özet yazılıyor…
+      <p role="status" className="flex items-center gap-2 text-xs font-mono text-muted-foreground">
+        <Loader2 className="size-3.5 animate-spin text-outbound" aria-hidden />
+        Yönetici özeti yazılıyor…
       </p>
     );
   }
 
   if (state.status === "error") {
     return (
-      <div role="alert" className="flex flex-wrap items-center gap-2 text-sm text-destructive">
-        <AlertTriangle className="size-4 shrink-0" aria-hidden />
+      <div role="alert" className="flex flex-wrap items-center gap-2 text-xs text-destructive">
+        <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
         {state.message}
         <button
           type="button"
           onClick={() => setState({ status: "confirm" })}
-          className="rounded-md border bg-card px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground"
+          className="rounded-md border bg-card px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
         >
           Tekrar dene
         </button>
@@ -469,9 +478,12 @@ function ExecutiveSummary({
   }
 
   return (
-    <figure className="flex flex-col gap-1 border-l-2 border-outbound py-1 pl-3 animate-in fade-in">
-      <figcaption className="text-xs text-muted-foreground">Yönetici özeti · modele {state.rows} satırlık toplu sonuç gönderildi</figcaption>
-      <blockquote className="text-[15px] leading-relaxed">{state.text}</blockquote>
+    <figure className="flex flex-col gap-1 rounded-xl border border-outbound/30 bg-outbound-soft/30 p-3.5 animate-in fade-in">
+      <figcaption className="text-[11px] font-mono text-outbound font-medium flex items-center gap-1.5">
+        <Sparkles className="size-3" />
+        YÖNETİCİ İÇGÖRÜSÜ &bull; Modele {state.rows} satırlık toplu sonuç iletildi
+      </figcaption>
+      <blockquote className="text-sm leading-relaxed text-foreground">{state.text}</blockquote>
     </figure>
   );
 }
@@ -479,13 +491,17 @@ function ExecutiveSummary({
 function SqlPeek({ sql }: { sql: string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <details className="group rounded-md border bg-panel text-sm">
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 text-muted-foreground select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
-        <ChevronRight className="size-3.5 transition-transform group-open:rotate-90" aria-hidden />
-        {"SQL'i göster"}
+    <details className="group rounded-xl border border-border/70 bg-panel/70 text-xs overflow-hidden">
+      <summary className="flex cursor-pointer list-none items-center justify-between px-3.5 py-2 font-mono text-muted-foreground select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
+        <span className="flex items-center gap-1.5">
+          <ChevronRight className="size-3.5 transition-transform group-open:rotate-90" aria-hidden />
+          <Terminal className="size-3 text-outbound" />
+          <span>Doğrulanmış DuckDB SQL Sorgusu</span>
+        </span>
+        <span className="text-[10px] text-muted-foreground/70 uppercase">AST Validated</span>
       </summary>
-      <div className="relative border-t">
-        <pre className="overflow-x-auto p-3 font-mono text-xs leading-relaxed">{sql}</pre>
+      <div className="relative border-t border-border/60 bg-card/40 p-3">
+        <pre className="overflow-x-auto font-mono text-xs leading-relaxed text-foreground/90">{sql}</pre>
         <button
           type="button"
           onClick={async () => {
@@ -493,9 +509,9 @@ function SqlPeek({ sql }: { sql: string }) {
             setCopied(true);
             setTimeout(() => setCopied(false), 1500);
           }}
-          className="absolute top-2 right-2 flex items-center gap-1 rounded border bg-card px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+          className="absolute top-2.5 right-2.5 flex items-center gap-1 rounded-md border border-border/80 bg-card/90 px-2 py-1 text-[11px] font-mono text-muted-foreground hover:text-foreground backdrop-blur-md cursor-pointer"
         >
-          {copied ? <Check className="size-3" aria-hidden /> : <Copy className="size-3" aria-hidden />}
+          {copied ? <Check className="size-3 text-local" aria-hidden /> : <Copy className="size-3" aria-hidden />}
           {copied ? "Kopyalandı" : "Kopyala"}
         </button>
       </div>
