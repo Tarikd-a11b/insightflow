@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowUp, Compass, CornerDownRight, Loader2, RefreshCw, Square, X } from "lucide-react";
+import { ArrowLeft, ArrowUp, Compass, CornerDownRight, Database, FileSpreadsheet, HardDrive, LayoutGrid, Loader2, RefreshCw, ShieldCheck, Sparkles, Square, Table2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, checkHealth, toColumnPayload, type HistoryItem, type SchemaPayload } from "@/lib/api";
 import { ask } from "@/lib/ask";
@@ -40,7 +40,7 @@ export function Workspace() {
   const ready = state.status === "ready" ? state : null;
   const [question, setQuestion] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
-  const [view, setView] = useState<View>("preview");
+  const [view, setView] = useState<View>("answers");
   const [boardOnly, setBoardOnly] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   // Onayla paylaşılan örnek değerler (sütun → değerler). Boş = yalnızca şema gider.
@@ -75,7 +75,7 @@ export function Workspace() {
     if (!ready) return [];
     const related = new Set(ready.relationships.flatMap((r) => [r.left.table, r.right.table]));
     const join = suggestJoinQuestions(ready.profile.columns, extraTables, related);
-    return [...join, ...suggestQuestions(ready.profile.columns, 6 - join.length)];
+    return [...join, ...suggestQuestions(ready.profile.columns, 4 - join.length)];
   }, [ready, extraTables]);
   const totalRows = ready ? ready.tables.reduce((n, t) => n + t.rowCount, 0) : null;
   const totalColumns = ready ? ready.tables.reduce((n, t) => n + t.columns.length, 0) : 0;
@@ -96,7 +96,7 @@ export function Workspace() {
   // Uyanırken de soru yazılıp gönderilebilir (kuyruğa alınır); yalnızca kesin ulaşılamazlıkta kilitlenir.
   const inputLocked = health === "unreachable" || health === "unconfigured";
 
-  // Ulaşılamazsa uyanma penceresi boyunca kendiliğinden yeniden dener (bkz. lib/health-watch.ts).
+  // Ulaşılamazsa uyanma penceresi boyunca kendiliğinden yeniden dener.
   const refreshHealth = useCallback(() => {
     stopHealthRef.current?.();
     stopHealthRef.current = watchHealth(checkHealth, (state) => onHealthRef.current(state));
@@ -137,10 +137,9 @@ export function Workspace() {
     abortRef.current?.abort();
     pendingRef.current = null;
     setTurns([]);
-    setView("preview");
+    setView("answers");
     setQuestion("");
     setBoardOnly(false);
-    // Kayıt veri seti oturumuna aittir; yeni veri setinde şerit sıfırdan başlar.
     outboundLog.clear();
     setSharedValues({});
     setContextChoice({ mode: "auto" });
@@ -185,7 +184,6 @@ export function Workspace() {
     if (q.length < 2 || busy || !ready || !engine.current || inputLocked) return;
 
     const id = nextId.current++;
-    // Modele giden şema: ana tablo + ek tablolar (sütun adı/tipi, onaylı örnek değerler) + eşleşen sütun çiftleri.
     const schema: SchemaPayload = {
       columns: toColumnPayload(ready.profile.columns, sharedValues),
       tables: extraTables.map((t) => ({ name: t.table, columns: toColumnPayload(t.columns, sharedValues, `${t.table}.`) })),
@@ -197,7 +195,6 @@ export function Workspace() {
     setTurns((all) => [...all, { id, question: q, parentId, step: { kind: waking ? "waiting" : "writing" }, outcome: null }]);
     setQuestion("");
     setView("answers");
-    // Her sorudan sonra bağlam varsayılana döner: bir sonraki soru bu yanıtın devamı sayılır.
     setContextChoice({ mode: "auto" });
 
     if (waking) {
@@ -207,7 +204,6 @@ export function Workspace() {
     void runTurn(id, q, schema, history);
   }
 
-  /** Otomatik keşif: tarayıcıda kural tabanlı içgörüler, model çağrısı yok (bkz. lib/explore.ts). */
   async function explore() {
     const current = engine.current;
     if (!ready || !current || exploring) return;
@@ -215,7 +211,7 @@ export function Workspace() {
     setView("answers");
     try {
       const insights = await runExplore(current, ready.profile);
-      if (engine.current !== current) return; // keşif sürerken veri seti kapatıldı
+      if (engine.current !== current) return;
       const newTurns: Turn[] = insights.map((insight) => ({
         id: nextId.current++,
         question: insight.title,
@@ -245,30 +241,43 @@ export function Workspace() {
   }
 
   const header = (
-    <header className="flex flex-wrap items-center gap-3 border-b bg-panel px-4 py-2.5">
-      <button type="button" onClick={closeDataset} className="font-heading text-lg font-bold tracking-tight" aria-label="InsightFlow, başa dön">
-        Insight<span className="text-local">Flow</span>
-      </button>
-      {ready && (
-        <span className="flex min-w-0 items-center gap-1.5 rounded-md border bg-card py-1 pr-1 pl-2.5 text-sm">
-          <span className="truncate font-medium">{ready.profile.name}</span>
-          {extraTables.length > 0 && (
-            <span className="shrink-0 rounded bg-local-soft px-1.5 py-0.5 text-[11px] font-medium text-local">+{extraTables.length} tablo</span>
-          )}
-          <span className="hidden font-mono text-xs text-muted-foreground sm:inline">
-            {formatInt(totalColumns)} sütun · {formatBytes(ready.sizeBytes)} · {formatInt(ready.profile.loadMs)} ms
-          </span>
-          <button
-            type="button"
-            onClick={closeDataset}
-            className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-            aria-label="Veri setini kapat"
-          >
-            <X className="size-3.5" />
-          </button>
-        </span>
-      )}
-      <div className="ml-auto flex items-center gap-2">
+    <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-border/70 bg-panel/85 px-4 sm:px-6 py-2.5 backdrop-blur-xl transition-all">
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={closeDataset}
+          className="group flex items-center gap-2 font-heading text-lg font-bold tracking-tight text-foreground transition-opacity hover:opacity-90"
+          aria-label="InsightFlow, başa dön"
+        >
+          <div className="size-2 rounded-full bg-local animate-pulse" />
+          <span>Insight<span className="text-local">Flow</span></span>
+        </button>
+
+        {ready && (
+          <div className="flex min-w-0 items-center gap-2 rounded-xl border border-border/70 bg-card/70 px-3 py-1 text-xs shadow-sm backdrop-blur-md">
+            <Database className="size-3.5 text-local" />
+            <span className="truncate font-semibold text-foreground max-w-[140px] sm:max-w-[200px]">{ready.profile.name}</span>
+            {extraTables.length > 0 && (
+              <span className="shrink-0 rounded-md bg-local-soft px-1.5 py-0.2 font-mono text-[10px] font-medium text-local border border-local/20">
+                +{extraTables.length} tablo
+              </span>
+            )}
+            <span className="hidden font-mono text-[11px] text-muted-foreground md:inline">
+              &bull; {formatInt(totalColumns)} sütun &bull; {formatBytes(ready.sizeBytes)}
+            </span>
+            <button
+              type="button"
+              onClick={closeDataset}
+              className="grid size-5 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors ml-1"
+              title="Veri setini kapat ve ana ekrana dön"
+            >
+              <X className="size-3" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2">
         <PrivacyLedger rowCount={totalRows} sent={sent} onOpen={() => setPanelOpen(true)} />
         <ThemeToggle />
       </div>
@@ -281,21 +290,21 @@ export function Workspace() {
 
   if (!ready) {
     return (
-      <div className="flex h-full flex-col">
+      <div className="flex min-h-screen flex-col bg-background selection:bg-outbound/20">
         {header}
         <main className="flex-1 overflow-y-auto">
           {boardOnly ? (
-            <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6">
+            <div className="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-8">
               <div className="flex items-center gap-3">
                 <button
                   type="button"
                   onClick={() => setBoardOnly(false)}
-                  className="flex items-center gap-1.5 rounded-md border bg-card px-2.5 py-1 text-sm text-muted-foreground hover:text-foreground"
+                  className="flex items-center gap-1.5 rounded-xl border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors shadow-sm"
                 >
                   <ArrowLeft className="size-3.5" aria-hidden />
-                  Geri
+                  Geri Dön
                 </button>
-                <h1 className="font-heading text-2xl font-medium">Pano</h1>
+                <h1 className="font-heading text-2xl font-semibold">Sabitlenen Analiz Panosu</h1>
               </div>
               <Pinboard pins={pins} unavailable={pinsUnavailable} />
             </div>
@@ -314,70 +323,88 @@ export function Workspace() {
     );
   }
 
-  const tabs: [View, string][] = [
-    ["answers", `Yanıtlar${turns.length ? ` (${turns.length})` : ""}`],
-    ["board", `Pano${pins?.length ? ` (${pins.length})` : ""}`],
-    ["preview", "Veri önizlemesi"],
+  const tabs: [View, string, string][] = [
+    ["answers", "Sohbet & Analiz", `${turns.length}`],
+    ["preview", "Veri Tablosu", `${formatInt(shownTable?.rowCount ?? ready.profile.rowCount)}`],
+    ["board", "Panom", `${pins?.length ?? 0}`],
   ];
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-screen flex-col bg-background overflow-hidden selection:bg-outbound/20">
       {header}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
-        <aside className="flex flex-col gap-6 border-b bg-panel p-4 lg:w-[22rem] lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-b-0">
+
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row overflow-hidden">
+        {/* Sol Sidebar (Denetim & Hızlı Öneriler Paneli) */}
+        <aside className="flex flex-col gap-5 border-b border-border/70 bg-panel/50 p-4 lg:w-[21rem] lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-b-0 backdrop-blur-sm">
+          
+          {/* Keşfet Butonu */}
           <button
             type="button"
             onClick={() => void explore()}
             disabled={exploring}
-            className="flex items-center gap-3 rounded-lg border border-local/40 bg-local-soft/60 px-3 py-2.5 text-left transition-colors hover:border-local disabled:opacity-60"
+            className="group relative flex items-center gap-3 rounded-xl border border-local/40 bg-local-soft/60 p-3 text-left transition-all hover:border-local hover:bg-local-soft/90 hover:shadow-md disabled:opacity-60 cursor-pointer"
           >
-            {exploring ? <Loader2 className="size-5 shrink-0 animate-spin text-local" aria-hidden /> : <Compass className="size-5 shrink-0 text-local" aria-hidden />}
-            <span className="flex flex-col">
-              <span className="text-sm font-medium">{exploring ? "Keşfediliyor…" : "Veriyi keşfet"}</span>
-              <span className="text-xs text-muted-foreground">Hazır içgörüler · yapay zekâ kullanılmaz</span>
-            </span>
+            <div className="grid size-9 place-items-center rounded-lg bg-local/10 text-local">
+              {exploring ? <Loader2 className="size-5 animate-spin" aria-hidden /> : <Compass className="size-5" aria-hidden />}
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="font-heading text-sm font-semibold text-foreground group-hover:text-local transition-colors">
+                {exploring ? "Analiz Ediliyor…" : "Veriyi Otomatik Keşfet"}
+              </span>
+              <span className="text-[11px] text-muted-foreground">Kural tabanlı hazır içgörüler</span>
+            </div>
           </button>
-          <section aria-labelledby="questions-heading" className="flex flex-col gap-2">
-            <h2 id="questions-heading" className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Hemen sorabileceklerin
-            </h2>
-            <ul className="flex flex-col gap-1.5">
+
+          {/* Hızlı Örnek Sorular */}
+          <section aria-labelledby="questions-heading" className="flex flex-col gap-2.5">
+            <div className="flex items-center justify-between">
+              <h2 id="questions-heading" className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase flex items-center gap-1.5">
+                <Sparkles className="size-3 text-outbound" />
+                Önerilen Sorular
+              </h2>
+            </div>
+            <div className="flex flex-col gap-1.5">
               {suggestions.map((q) => (
-                <li key={q}>
-                  <button
-                    type="button"
-                    disabled={busy || inputLocked}
-                    onClick={() => void submit(q)}
-                    className="w-full rounded-md border bg-card px-3 py-2 text-left text-sm transition-colors hover:border-foreground/30 disabled:opacity-50"
-                  >
-                    {q}
-                  </button>
-                </li>
+                <button
+                  key={q}
+                  type="button"
+                  disabled={busy || inputLocked}
+                  onClick={() => void submit(q)}
+                  className="rounded-xl border border-border/70 bg-card/60 px-3 py-2 text-left text-xs font-medium text-foreground/90 transition-all hover:border-foreground/30 hover:bg-card hover:shadow-sm hover:translate-x-0.5 disabled:opacity-50 cursor-pointer"
+                >
+                  {q}
+                </button>
               ))}
-            </ul>
+            </div>
           </section>
-          <TablesPanel
-            tables={ready.tables}
-            relationships={ready.relationships}
-            selected={shownTable?.table ?? PRIMARY_TABLE}
-            onSelect={setSelectedTable}
-            onAddFiles={(files) => void addFiles(files)}
-            onRemove={(table) => {
-              if (selectedTable === table) setSelectedTable(PRIMARY_TABLE);
-              // Çıkarılan tablonun paylaşılan örnek değerleri de düşer.
-              setSharedValues((s) => Object.fromEntries(Object.entries(s).filter(([k]) => !k.startsWith(`${table}.`))));
-              void removeTable(table);
-            }}
-            reloading={ready.reloading}
-            error={ready.addError}
-          />
-          <SchemaPanel profile={shownTable ?? ready.profile} />
+
+          {/* Tablo & Şema İnceleme */}
+          <div className="flex flex-col gap-4 border-t border-border/60 pt-4">
+            <TablesPanel
+              tables={ready.tables}
+              relationships={ready.relationships}
+              selected={shownTable?.table ?? PRIMARY_TABLE}
+              onSelect={setSelectedTable}
+              onAddFiles={(files) => void addFiles(files)}
+              onRemove={(table) => {
+                if (selectedTable === table) setSelectedTable(PRIMARY_TABLE);
+                setSharedValues((s) => Object.fromEntries(Object.entries(s).filter(([k]) => !k.startsWith(`${table}.`))));
+                void removeTable(table);
+              }}
+              reloading={ready.reloading}
+              error={ready.addError}
+            />
+            <SchemaPanel profile={shownTable ?? ready.profile} />
+          </div>
         </aside>
 
-        <main className="flex min-h-[75vh] min-w-0 flex-1 flex-col gap-3 p-4 lg:min-h-0">
-          <div className="flex items-center justify-between gap-2">
-            <div role="tablist" aria-label="Görünüm" className="flex rounded-md border bg-card p-0.5 text-sm">
-              {tabs.map(([key, label]) => (
+        {/* Ana Analitik & Görselleştirme Alanı */}
+        <main className="relative flex min-h-0 flex-1 flex-col p-4 sm:p-6 overflow-hidden">
+          
+          {/* Üst Sekmeler */}
+          <div className="flex items-center justify-between gap-3 pb-3 border-b border-border/50 shrink-0">
+            <div role="tablist" aria-label="Görünüm" className="inline-flex rounded-xl border border-border/70 bg-panel/80 p-1 text-xs shadow-inner backdrop-blur-md">
+              {tabs.map(([key, label, badge]) => (
                 <button
                   key={key}
                   type="button"
@@ -385,197 +412,227 @@ export function Workspace() {
                   aria-selected={view === key}
                   onClick={() => setView(key)}
                   className={cn(
-                    "rounded px-3 py-1 whitespace-nowrap transition-colors",
-                    view === key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                    "flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-medium whitespace-nowrap transition-all duration-200 cursor-pointer",
+                    view === key
+                      ? "bg-card text-foreground shadow-sm font-semibold"
+                      : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  {label}
+                  <span>{label}</span>
+                  {badge && badge !== "0" && (
+                    <span className={cn(
+                      "rounded-full px-1.5 py-0.2 font-mono text-[10px]",
+                      view === key ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+                    )}>
+                      {badge}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
+
             {view === "preview" && (
               <span className="hidden font-mono text-xs text-muted-foreground sm:inline">
-                {shownTable?.table} · ilk {formatInt((ready.previews[shownTable?.table ?? PRIMARY_TABLE] ?? ready.preview).rows.length)} /{" "}
-                {formatInt(shownTable?.rowCount ?? ready.profile.rowCount)} satır
+                {shownTable?.table} &bull; İlk {formatInt((ready.previews[shownTable?.table ?? PRIMARY_TABLE] ?? ready.preview).rows.length)} satır
               </span>
             )}
           </div>
 
-          {view === "preview" && (
-            <PreviewTable
-              key={shownTable?.table}
-              result={ready.previews[shownTable?.table ?? PRIMARY_TABLE] ?? ready.preview}
-              columns={(shownTable ?? ready.profile).columns}
-              className="flex-1"
-            />
-          )}
+          {/* İçerik Alanı */}
+          <div className="min-h-0 flex-1 overflow-y-auto py-4 pr-1">
+            
+            {view === "preview" && (
+              <div className="h-full rounded-2xl border border-border/70 bg-card/50 backdrop-blur-sm overflow-hidden p-1 shadow-sm">
+                <PreviewTable
+                  key={shownTable?.table}
+                  result={ready.previews[shownTable?.table ?? PRIMARY_TABLE] ?? ready.preview}
+                  columns={(shownTable ?? ready.profile).columns}
+                  className="h-full"
+                />
+              </div>
+            )}
 
-          {view === "board" && (
-            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-              <Pinboard pins={pins} unavailable={pinsUnavailable} />
-            </div>
-          )}
+            {view === "board" && (
+              <div className="h-full">
+                <Pinboard pins={pins} unavailable={pinsUnavailable} />
+              </div>
+            )}
 
-          {view === "answers" && (
-            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-              {turns.length === 0 ? (
-                <div className="mx-auto flex max-w-md flex-col items-center gap-3 py-12 text-center">
-                  <Compass className="size-7 text-local" aria-hidden />
-                  <p className="font-medium">Nereden başlayacağını bilmiyor musun?</p>
-                  <p className="text-sm text-muted-foreground">
-                    Keşif; trendleri, en büyük kategorileri, oran farklarını ve veri kalitesini tarayıcında çıkarır. Yapay zekâya hiçbir şey gönderilmez.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => void explore()}
-                    disabled={exploring}
-                    className="mt-1 flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
-                  >
-                    {exploring ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Compass className="size-4" aria-hidden />}
-                    {exploring ? "Keşfediliyor…" : "Veriyi keşfet"}
-                  </button>
-                  <p className="text-xs text-muted-foreground">ya da soldaki önerilerden birine tıkla, aşağıya kendi sorunu yaz</p>
-                </div>
-              ) : (
-                <div className="mx-auto flex max-w-4xl flex-col gap-6">
-                  {turns.map((t) => (
-                    <AnswerCard
-                      key={t.id}
-                      turn={t}
-                      datasetName={datasetLabel}
-                      tableNames={extraTables.map((t) => t.table)}
-                      onStop={stop}
-                      onContinue={continueFrom}
-                      isContext={t.id === contextId}
-                      parentQuestion={t.parentId === undefined ? undefined : turns.find((p) => p.id === t.parentId)?.question}
-                    />
-                  ))}
-                  <div ref={threadEndRef} />
-                </div>
-              )}
-            </div>
-          )}
+            {view === "answers" && (
+              <div className="flex flex-col gap-6 pb-28">
+                {turns.length === 0 ? (
+                  <div className="mx-auto flex max-w-md flex-col items-center gap-4 py-16 text-center animate-in fade-in duration-500">
+                    <div className="grid size-12 place-items-center rounded-2xl bg-local-soft text-local border border-local/30 shadow-sm">
+                      <Sparkles className="size-6" aria-hidden />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <p className="font-heading text-lg font-semibold text-foreground">Analize başlamaya hazır mısın?</p>
+                      <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                        Aşağıdaki komut çubuğuna Türkçe bir soru yazabilir veya soldaki önerilen sorulardan birine tıklayabilirsin.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void explore()}
+                      disabled={exploring}
+                      className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-medium text-primary-foreground shadow-md transition-all hover:scale-[1.02] hover:opacity-90 active:scale-95 disabled:opacity-60 cursor-pointer"
+                    >
+                      {exploring ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Compass className="size-3.5" aria-hidden />}
+                      {exploring ? "İçgörüler Çıkarılıyor…" : "Veriyi Otomatik Keşfet"}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
+                    {turns.map((t) => (
+                      <AnswerCard
+                        key={t.id}
+                        turn={t}
+                        datasetName={datasetLabel}
+                        tableNames={extraTables.map((t) => t.table)}
+                        onStop={stop}
+                        onContinue={continueFrom}
+                        isContext={t.id === contextId}
+                        parentQuestion={t.parentId === undefined ? undefined : turns.find((p) => p.id === t.parentId)?.question}
+                      />
+                    ))}
+                    <div ref={threadEndRef} />
+                  </div>
+                )}
+              </div>
+            )}
 
+          </div>
+
+          {/* Sunucu Durum Bildirimleri */}
           {health === "waking" && (
-            <div role="status" className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2 text-sm text-muted-foreground">
+            <div role="status" className="mb-2 flex items-center gap-3 rounded-xl border border-outbound/30 bg-outbound-soft/60 px-4 py-2.5 text-xs text-muted-foreground backdrop-blur-md animate-in fade-in">
               <Loader2 className="size-4 shrink-0 animate-spin text-outbound" aria-hidden />
               <span>
-                <span className="text-foreground">Yanıt motoru uyanıyor…</span> Ücretsiz sunucu boştayken uyku moduna geçiyor; bu
-                genelde 30–50 saniye sürer. Sorunu şimdi gönderebilirsin; sunucu hazır olunca kendiliğinden işlenir.
+                <strong className="text-foreground font-medium">Yanıt motoru hazırlanıyor…</strong> Ücretsiz sunucu boştayken uyku moduna geçiyor; sorunuz kuyruğa alındı ve motor uyanınca otomatik çalıştırılacak.
               </span>
             </div>
           )}
 
           {(health === "unreachable" || health === "unconfigured") && (
-            <div role="alert" className="flex items-center gap-3 rounded-lg border border-destructive/40 bg-card px-3 py-2 text-sm">
-              <span className="text-destructive">{HEALTH_MESSAGE[health]}</span>
+            <div role="alert" className="mb-2 flex items-center gap-3 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-2.5 text-xs text-destructive backdrop-blur-md animate-in fade-in">
+              <span>{HEALTH_MESSAGE[health]}</span>
               <button
                 type="button"
                 onClick={refreshHealth}
-                className="ml-auto flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+                className="ml-auto flex shrink-0 items-center gap-1.5 rounded-lg border border-destructive/30 bg-card px-2 py-1 text-xs text-destructive hover:bg-destructive/20 transition-colors"
               >
                 <RefreshCw className="size-3" aria-hidden />
-                Tekrar dene
+                Tekrar Dene
               </button>
             </div>
           )}
 
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void submit(question);
-            }}
-            className={cn("flex flex-col gap-2 rounded-lg border bg-card p-2 focus-within:border-foreground/30", inputLocked && "opacity-60")}
-          >
-            {contextQuestion && !inputLocked && (
-              <div className="flex min-w-0 items-center gap-1.5 px-2 pt-0.5 text-xs">
-                <CornerDownRight className="size-3.5 shrink-0 text-outbound" aria-hidden />
-                <span className="shrink-0 text-muted-foreground">Önceki soruyla bağlantılı:</span>
-                <span className="truncate font-medium" title={contextQuestion}>
-                  &ldquo;{contextQuestion}&rdquo;
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setContextChoice({ mode: "none" })}
-                  className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-                  aria-label="Önceki soruyla bağlantıyı kaldır"
-                >
-                  <X className="size-3" />
-                </button>
-              </div>
-            )}
-            {!contextQuestion && contextChoice.mode === "none" && autoContextId !== null && !inputLocked && (
-              <button
-                type="button"
-                onClick={() => setContextChoice({ mode: "auto" })}
-                className="flex items-center gap-1.5 self-start px-2 pt-0.5 text-xs text-muted-foreground hover:text-foreground"
-              >
-                <CornerDownRight className="size-3.5" aria-hidden />
-                Son soruya bağla
-              </button>
-            )}
-            <label htmlFor="question" className="sr-only">
-              Verine bir soru sor
-            </label>
-            <textarea
-              id="question"
-              ref={inputRef}
-              rows={2}
-              maxLength={500}
-              value={question}
-              disabled={inputLocked}
-              onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void submit(question);
-                }
+          {/* Floating Command Bar (Yüzen Soru & Sohbet Giriş Çubuğu) */}
+          <div className="absolute bottom-4 left-4 right-4 sm:left-6 sm:right-6 max-w-4xl mx-auto z-20">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void submit(question);
               }}
-              placeholder="Verine bir soru sor… (Enter ile gönder)"
-              className="resize-none bg-transparent px-2 py-1 text-sm outline-none placeholder:text-muted-foreground"
-            />
-            <div className="flex items-center justify-between gap-2 px-1">
-              <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                <span>
-                  Modele <span className="text-outbound">{totalColumns} sütunun adı ve tipi</span>
-                  {extraTables.length > 0 && ready.relationships.length > 0 && <> ve tablo ilişkileri</>}
-                  {sharedCount > 0 && (
-                    <>
-                      {" "}+ <span className="text-outbound">{sharedCount} örnek değer</span>
-                    </>
-                  )}{" "}
-                  gider.
-                </span>
-                <button type="button" onClick={() => setValuesDialogOpen(true)} className="underline underline-offset-2 hover:text-foreground">
-                  {sharedCount > 0 ? "Örnek değerleri düzenle" : "Örnek değerleri paylaş"}
-                </button>
-                <button type="button" onClick={() => setPanelOpen(true)} className="underline underline-offset-2 hover:text-foreground">
-                  Gönderilenleri gör
-                </button>
-              </span>
-              {busy ? (
-                <button
-                  type="button"
-                  onClick={stop}
-                  className="grid size-8 shrink-0 place-items-center rounded-md border bg-card text-foreground"
-                  aria-label="Soruyu durdur"
-                >
-                  <Square className="size-3.5 fill-current" />
-                </button>
-              ) : (
-                <button
-                  type="submit"
-                  disabled={question.trim().length < 2 || inputLocked}
-                  className="grid size-8 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground disabled:opacity-40"
-                  aria-label="Soruyu gönder"
-                >
-                  <ArrowUp className="size-4" />
-                </button>
+              className={cn(
+                "relative flex flex-col gap-2 rounded-2xl border border-border/80 bg-card/90 p-3 shadow-2xl backdrop-blur-2xl transition-all duration-300 focus-within:border-foreground/40 focus-within:shadow-indigo-500/10",
+                inputLocked && "opacity-60"
               )}
-            </div>
-          </form>
+            >
+              {contextQuestion && !inputLocked && (
+                <div className="flex min-w-0 items-center gap-1.5 px-2 text-[11px] text-muted-foreground animate-in fade-in">
+                  <CornerDownRight className="size-3 text-outbound shrink-0" aria-hidden />
+                  <span className="shrink-0">Önceki soruyla bağlantılı:</span>
+                  <span className="truncate font-semibold text-foreground" title={contextQuestion}>
+                    &ldquo;{contextQuestion}&rdquo;
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setContextChoice({ mode: "none" })}
+                    className="grid size-4 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground ml-1"
+                    aria-label="Önceki soruyla bağlantıyı kaldır"
+                  >
+                    <X className="size-2.5" />
+                  </button>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 px-1">
+                <label htmlFor="question" className="sr-only">
+                  Verinize soru sorun
+                </label>
+                <textarea
+                  id="question"
+                  ref={inputRef}
+                  rows={1}
+                  maxLength={500}
+                  value={question}
+                  disabled={inputLocked}
+                  onChange={(e) => setQuestion(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      void submit(question);
+                    }
+                  }}
+                  placeholder="Veriniz hakkında bir metrik veya soru yazın… (Örn: En karlı 5 kategori hangisi?)"
+                  className="w-full resize-none bg-transparent px-2 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground/70"
+                />
+
+                {busy ? (
+                  <button
+                    type="button"
+                    onClick={stop}
+                    className="grid size-9 shrink-0 place-items-center rounded-xl bg-destructive text-destructive-foreground shadow-sm transition-all hover:opacity-90 active:scale-95 cursor-pointer"
+                    aria-label="Soruyu durdur"
+                  >
+                    <Square className="size-3.5 fill-current" />
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={question.trim().length < 2 || inputLocked}
+                    className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-md transition-all hover:scale-105 active:scale-95 disabled:opacity-30 disabled:hover:scale-100 cursor-pointer"
+                    aria-label="Soruyu gönder"
+                  >
+                    <ArrowUp className="size-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Alt Gizlilik & Metrik Bilgisi */}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/40 px-2 pt-2 text-[11px] text-muted-foreground">
+                <div className="flex items-center gap-1.5">
+                  <ShieldCheck className="size-3.5 text-local shrink-0" />
+                  <span>
+                    Yapay zekâya yalnızca <span className="font-semibold text-outbound">{totalColumns} sütun şeması</span> gider. Ham veri cihazınızda kalır.
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setValuesDialogOpen(true)}
+                    className="underline underline-offset-2 hover:text-foreground transition-colors"
+                  >
+                    {sharedCount > 0 ? `${sharedCount} Örnek Değer` : "Örnek Değer Paylaş"}
+                  </button>
+                  <span>&bull;</span>
+                  <button
+                    type="button"
+                    onClick={() => setPanelOpen(true)}
+                    className="underline underline-offset-2 hover:text-foreground transition-colors"
+                  >
+                    Gidenleri Gör
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+
         </main>
       </div>
+
       {panel}
       <SampleValuesDialog
         open={valuesDialogOpen}

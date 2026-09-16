@@ -5,8 +5,10 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Renk dili bir sözleşme: yeşil (--local) = cihazda kalan veri,
- * çivit (--outbound) = yapay zekâya giden bilgi. Başka hiçbir şey bu iki rengi kullanmaz.
+ * InsightFlow Tasarım Dili:
+ * Sinematik, derinlikli, modern karanlık/aydınlık SaaS paleti.
+ * Yeşil (--local) = cihazda kalan güvenli veri.
+ * İndigo (--outbound) = yapay zekâya giden şema metadatası.
  */
 
 @theme inline {
@@ -43,56 +45,56 @@
 }
 
 :root {
-  --background: #eef1f4;
-  --panel: #f7f9fa;
-  --foreground: #111820;
+  --background: #f8fafc;
+  --panel: #f1f5f9;
+  --foreground: #0f172a;
   --card: #ffffff;
-  --card-foreground: #111820;
+  --card-foreground: #0f172a;
   --popover: #ffffff;
-  --popover-foreground: #111820;
-  --primary: #111820;
-  --primary-foreground: #f7f9fa;
-  --secondary: #e4e8ec;
-  --secondary-foreground: #111820;
-  --muted: #e4e8ec;
-  --muted-foreground: #56616d;
-  --accent: #e4e8ec;
-  --accent-foreground: #111820;
-  --destructive: #c2410c;
-  --border: #d6dce2;
-  --input: #d6dce2;
-  --ring: #4338ca;
-  --local: #0d7f57;
-  --local-soft: #dcf1e8;
-  --outbound: #4338ca;
-  --outbound-soft: #e5e3fb;
-  --radius: 0.5rem;
+  --popover-foreground: #0f172a;
+  --primary: #0f172a;
+  --primary-foreground: #f8fafc;
+  --secondary: #e2e8f0;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #e2e8f0;
+  --accent-foreground: #0f172a;
+  --destructive: #ea580c;
+  --border: #e2e8f0;
+  --input: #cbd5e1;
+  --ring: #6366f1;
+  --local: #059669;
+  --local-soft: #ecfdf5;
+  --outbound: #4f46e5;
+  --outbound-soft: #eef2ff;
+  --radius: 0.75rem;
 }
 
 .dark {
-  --background: #0c1015;
-  --panel: #11161c;
-  --foreground: #e4e9ee;
-  --card: #161c23;
-  --card-foreground: #e4e9ee;
-  --popover: #1b222a;
-  --popover-foreground: #e4e9ee;
-  --primary: #e4e9ee;
-  --primary-foreground: #0c1015;
-  --secondary: #1f2730;
-  --secondary-foreground: #e4e9ee;
-  --muted: #1f2730;
-  --muted-foreground: #8d98a4;
-  --accent: #1f2730;
-  --accent-foreground: #e4e9ee;
-  --destructive: #fb923c;
-  --border: #242c35;
-  --input: #2b343e;
-  --ring: #8c86ff;
-  --local: #3cc592;
-  --local-soft: #10291f;
-  --outbound: #8c86ff;
-  --outbound-soft: #1d1b3b;
+  --background: #090d16;
+  --panel: #0d131f;
+  --foreground: #f1f5f9;
+  --card: #111827;
+  --card-foreground: #f1f5f9;
+  --popover: #151e2e;
+  --popover-foreground: #f1f5f9;
+  --primary: #f8fafc;
+  --primary-foreground: #090d16;
+  --secondary: #1e293b;
+  --secondary-foreground: #f1f5f9;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  --accent: #1e293b;
+  --accent-foreground: #f1f5f9;
+  --destructive: #f97316;
+  --border: #1e293b;
+  --input: #334155;
+  --ring: #818cf8;
+  --local: #10b981;
+  --local-soft: #064e3b;
+  --outbound: #818cf8;
+  --outbound-soft: #1e1b4b;
 }
 
 @layer base {
@@ -100,15 +102,64 @@
     @apply border-border outline-ring/50;
   }
   html {
-    @apply font-sans;
+    @apply font-sans scroll-smooth;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground selection:bg-outbound/20 selection:text-outbound;
   }
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
+}
+
+/* Glassmorphism & Sinematik Işık Efektleri */
+.glass-panel {
+  background: rgba(var(--panel), 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.glass-card {
+  background: rgba(var(--card), 0.8);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.ambient-glow {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 9999px;
+  filter: blur(80px);
+  opacity: 0.5;
+  z-index: 0;
+}
+
+.ambient-glow-emerald {
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.25) 0%, rgba(16, 185, 129, 0) 70%);
+}
+
+.ambient-glow-indigo {
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.25) 0%, rgba(99, 102, 241, 0) 70%);
+}
+
+/* Shimmer & Animasyon Efektleri */
+@keyframes subtle-float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-4px); }
+}
+
+.animate-subtle-float {
+  animation: subtle-float 6s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 4s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

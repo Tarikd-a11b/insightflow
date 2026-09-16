@@ -1,9 +1,10 @@
 "use client";
 
-import { AlertTriangle, BarChart3, Check, ChevronRight, Compass, Copy, CornerDownRight, FileDown, Loader2, Pin, PinOff, SearchX, Sparkles, Table2, Wrench } from "lucide-react";
-import { useMemo, useState } from "react";
+import { AlertTriangle, BarChart3, Check, ChevronRight, Compass, Copy, CornerDownRight, FileDown, FileSpreadsheet, Image as ImageIcon, Loader2, Pin, PinOff, SearchX, Sparkles, Table2, Wrench } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
 import { ApiError, requestSummary, summaryPayload } from "@/lib/api";
 import type { AskOutcome, AskStep } from "@/lib/ask";
+import { downloadChartAsPng, downloadCsv } from "@/lib/export";
 import { formatInt } from "@/lib/format";
 import { pinStore } from "@/lib/pins";
 import type { ReportItem } from "@/lib/report";
@@ -135,6 +136,7 @@ function AnswerBody({
   const [view, setView] = useState<"chart" | "table">(chartable ? "chart" : "table");
   const [pinId, setPinId] = useState<string | null>(null);
   const [summary, setSummary] = useState<string | undefined>(undefined);
+  const resultRef = useRef<HTMLDivElement>(null);
   const empty = answer.result.rows.length === 0;
 
   function onSummary(text: string) {
@@ -187,8 +189,14 @@ function AnswerBody({
               Buna devam et
             </button>
             <PdfButton item={{ question, datasetName, explanation: answer.explanation, sql: answer.sql, chart: answer.chart, result: answer.result, summary }} />
+            <CsvButton result={answer.result} question={question} />
+            {chartable && view === "chart" && answer.chart !== "table" && answer.chart !== "kpi" && (
+              <PngButton containerRef={resultRef} question={question} />
+            )}
           </div>
-          <ResultView result={answer.result} chart={answer.chart} mode={view === "table" ? "table" : "auto"} />
+          <div ref={resultRef}>
+            <ResultView result={answer.result} chart={answer.chart} mode={view === "table" ? "table" : "auto"} />
+          </div>
         </>
       )}
 
@@ -300,6 +308,57 @@ function PdfButton({ item }: { item: Omit<ReportItem, "createdAt"> }) {
       </button>
       {state === "error" && <span className="text-xs text-destructive">PDF oluşturulamadı.</span>}
     </>
+  );
+}
+
+/** Sonuç tablosunu Türkçe UTF-8 BOM ile CSV olarak indirir. */
+function CsvButton({ result, question }: { result: Answer["result"]; question: string }) {
+  function download() {
+    const slug = question.slice(0, 30).toLowerCase().replace(/[^a-z0-9ğüşıöç]+/gi, "-").replace(/^-|-$/g, "");
+    downloadCsv(result, `insightflow-${slug || "veri"}.csv`);
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={download}
+      className="flex items-center gap-1.5 rounded-md border bg-card px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      title="Sonuç verisini Excel uyumlu CSV olarak indir"
+    >
+      <FileSpreadsheet className="size-3.5" aria-hidden />
+      CSV indir
+    </button>
+  );
+}
+
+/** ECharts SVG grafiğini yüksek çözünürlüklü PNG olarak indirir. */
+function PngButton({ containerRef, question }: { containerRef: React.RefObject<HTMLDivElement | null>; question: string }) {
+  const [loading, setLoading] = useState(false);
+
+  async function download() {
+    if (!containerRef.current) return;
+    setLoading(true);
+    try {
+      const slug = question.slice(0, 30).toLowerCase().replace(/[^a-z0-9ğüşıöç]+/gi, "-").replace(/^-|-$/g, "");
+      await downloadChartAsPng(containerRef.current, `insightflow-${slug || "grafik"}.png`);
+    } catch {
+      // Hata durumunda sessiz kal veya console log
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => void download()}
+      disabled={loading}
+      className="flex items-center gap-1.5 rounded-md border bg-card px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-60"
+      title="Grafiği yüksek kaliteli PNG resmi olarak indir"
+    >
+      {loading ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <ImageIcon className="size-3.5" aria-hidden />}
+      PNG indir
+    </button>
   );
 }
 
