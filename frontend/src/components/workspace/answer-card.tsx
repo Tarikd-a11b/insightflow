@@ -1,9 +1,10 @@
 "use client";
 
-import { AlertTriangle, BarChart3, Check, ChevronRight, Compass, Copy, CornerDownRight, Database, FileDown, FileSpreadsheet, Image as ImageIcon, Loader2, Pin, PinOff, SearchX, ShieldCheck, Sparkles, Table2, Terminal, Wrench } from "lucide-react";
+import { AlertTriangle, BarChart3, Check, ChevronRight, Compass, Copy, CornerDownRight, Database, FileDown, FileSpreadsheet, Image as ImageIcon, Info, LineChart, Loader2, PieChart, Pin, PinOff, SearchX, ShieldCheck, Sparkles, Table2, Terminal, TrendingDown, TrendingUp, Wrench, Zap } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-import { ApiError, requestSummary, summaryPayload } from "@/lib/api";
+import { ApiError, requestSummary, summaryPayload, type ChartKind } from "@/lib/api";
 import type { AskOutcome, AskStep } from "@/lib/ask";
+import { getAvailableChartKinds, type ChartKindOption } from "@/lib/chart-spec";
 import { downloadChartAsPng, downloadCsv } from "@/lib/export";
 import { formatInt } from "@/lib/format";
 import { pinStore } from "@/lib/pins";
@@ -119,6 +120,15 @@ export function AnswerCard({
   );
 }
 
+const CHART_ICONS: Record<ChartKind, typeof BarChart3> = {
+  bar: BarChart3,
+  line: LineChart,
+  donut: PieChart,
+  scatter: Zap,
+  kpi: Sparkles,
+  table: Table2,
+};
+
 function AnswerBody({
   question,
   answer,
@@ -132,8 +142,15 @@ function AnswerBody({
   onContinue: () => void;
   tableNames: string[];
 }) {
-  const chartable = useMemo(() => hasChart(answer.chart, answer.result), [answer]);
-  const [view, setView] = useState<"chart" | "table">(chartable ? "chart" : "table");
+  const chartOptions = useMemo(() => getAvailableChartKinds(answer.result), [answer.result]);
+  const initialChart = useMemo<ChartKind>(() => {
+    const directMatch = chartOptions.find((o) => o.kind === answer.chart && o.available);
+    if (directMatch) return answer.chart;
+    const firstAvailable = chartOptions.find((o) => o.available);
+    return firstAvailable ? firstAvailable.kind : "table";
+  }, [chartOptions, answer.chart]);
+
+  const [selectedChart, setSelectedChart] = useState<ChartKind>(initialChart);
   const [pinId, setPinId] = useState<string | null>(null);
   const [summary, setSummary] = useState<string | undefined>(undefined);
   const resultRef = useRef<HTMLDivElement>(null);
@@ -152,49 +169,60 @@ function AnswerBody({
         <p className="text-sm text-muted-foreground">Sorgu çalıştı ama koşula uyan kayıt yok. Filtreyi genişletmeyi deneyin.</p>
       ) : (
         <>
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            {chartable && (
-              <div role="tablist" aria-label="Sonuç görünümü" className="flex gap-1 rounded-lg border border-border/70 bg-panel p-0.5 text-xs shadow-inner">
-                {(
-                  [
-                    ["chart", "Grafik", BarChart3],
-                    ["table", "Tablo", Table2],
-                  ] as const
-                ).map(([key, label, Icon]) => (
+          {/* Akıllı Grafik & Görünüm Değiştirici (Dynamic Chart Switcher with Heuristics) */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <div role="tablist" aria-label="Görselleştirme Seçimi" className="flex flex-wrap items-center gap-1 rounded-xl border border-border/70 bg-panel/80 p-1 text-xs shadow-inner backdrop-blur-sm">
+              {chartOptions.map((opt) => {
+                const Icon = CHART_ICONS[opt.kind] ?? BarChart3;
+                const isSelected = selectedChart === opt.kind;
+                return (
                   <button
-                    key={key}
+                    key={opt.kind}
                     type="button"
                     role="tab"
-                    aria-selected={view === key}
-                    onClick={() => setView(key)}
+                    aria-selected={isSelected}
+                    disabled={!opt.available}
+                    onClick={() => opt.available && setSelectedChart(opt.kind)}
+                    title={opt.available ? `${opt.label} Grafiğine Geç` : `${opt.label}: ${opt.reason}`}
                     className={cn(
-                      "flex items-center gap-1.5 rounded-md px-2.5 py-1 transition-all cursor-pointer",
-                      view === key ? "bg-card text-foreground font-semibold shadow-xs" : "text-muted-foreground hover:text-foreground",
+                      "group relative flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-all select-none",
+                      isSelected
+                        ? "bg-card text-foreground font-semibold shadow-xs ring-1 ring-border/80"
+                        : opt.available
+                        ? "text-muted-foreground hover:bg-card/50 hover:text-foreground cursor-pointer"
+                        : "text-muted-foreground/35 cursor-not-allowed opacity-50",
                     )}
                   >
-                    <Icon className="size-3.5" aria-hidden />
-                    {label}
+                    <Icon className={cn("size-3.5", isSelected ? "text-outbound" : opt.available ? "text-muted-foreground" : "text-muted-foreground/30")} aria-hidden />
+                    <span>{opt.label}</span>
+                    {!opt.available && (
+                      <span className="ml-0.5 inline-block size-1.5 rounded-full bg-muted-foreground/40" />
+                    )}
                   </button>
-                ))}
-              </div>
-            )}
-            <PinButton question={question} answer={answer} datasetName={datasetName} pinId={pinId} onPinChange={setPinId} summary={summary} />
-            <button
-              type="button"
-              onClick={onContinue}
-              className="flex items-center gap-1.5 rounded-lg border border-border/70 bg-card px-2.5 py-1 text-xs text-muted-foreground transition-all hover:border-outbound/60 hover:text-foreground hover:shadow-xs cursor-pointer"
-            >
-              <CornerDownRight className="size-3.5 text-outbound" aria-hidden />
-              Takip Sorusu
-            </button>
-            <PdfButton item={{ question, datasetName, explanation: answer.explanation, sql: answer.sql, chart: answer.chart, result: answer.result, summary }} />
-            <CsvButton result={answer.result} question={question} />
-            {chartable && view === "chart" && answer.chart !== "table" && answer.chart !== "kpi" && (
-              <PngButton containerRef={resultRef} question={question} />
-            )}
+                );
+              })}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <PinButton question={question} answer={{ ...answer, chart: selectedChart }} datasetName={datasetName} pinId={pinId} onPinChange={setPinId} summary={summary} />
+              <button
+                type="button"
+                onClick={onContinue}
+                className="flex items-center gap-1.5 rounded-lg border border-border/70 bg-card px-2.5 py-1 text-xs text-muted-foreground transition-all hover:border-outbound/60 hover:text-foreground hover:shadow-xs cursor-pointer"
+              >
+                <CornerDownRight className="size-3.5 text-outbound" aria-hidden />
+                Takip Sorusu
+              </button>
+              <PdfButton item={{ question, datasetName, explanation: answer.explanation, sql: answer.sql, chart: selectedChart, result: answer.result, summary }} />
+              <CsvButton result={answer.result} question={question} />
+              {selectedChart !== "table" && selectedChart !== "kpi" && (
+                <PngButton containerRef={resultRef} question={question} />
+              )}
+            </div>
           </div>
+
           <div ref={resultRef}>
-            <ResultView result={answer.result} chart={answer.chart} mode={view === "table" ? "table" : "auto"} />
+            <ResultView result={answer.result} chart={selectedChart} mode={selectedChart === "table" ? "table" : "auto"} />
           </div>
         </>
       )}
@@ -478,13 +506,76 @@ function ExecutiveSummary({
   }
 
   return (
-    <figure className="flex flex-col gap-1 rounded-xl border border-outbound/30 bg-outbound-soft/30 p-3.5 animate-in fade-in">
-      <figcaption className="text-[11px] font-mono text-outbound font-medium flex items-center gap-1.5">
-        <Sparkles className="size-3" />
-        YÖNETİCİ İÇGÖRÜSÜ &bull; Modele {state.rows} satırlık toplu sonuç iletildi
+    <figure className="flex flex-col gap-2 rounded-2xl border border-outbound/30 bg-outbound-soft/30 p-4 animate-in fade-in shadow-xs backdrop-blur-sm">
+      <figcaption className="text-[11px] font-mono text-outbound font-semibold flex items-center justify-between border-b border-outbound/20 pb-2">
+        <span className="flex items-center gap-1.5">
+          <Sparkles className="size-3.5 text-outbound" />
+          YÖNETİCİ İÇGÖRÜSÜ &bull; Modele {state.rows} satırlık toplu sonuç iletildi
+        </span>
+        <span className="text-[10px] font-normal uppercase tracking-wider text-muted-foreground">AI Executive Brief</span>
       </figcaption>
-      <blockquote className="text-sm leading-relaxed text-foreground">{state.text}</blockquote>
+      <blockquote className="pt-1">
+        <FormattedExecutiveText text={state.text} />
+      </blockquote>
     </figure>
+  );
+}
+
+function FormattedExecutiveText({ text }: { text: string }) {
+  const lines = text.split("\n").filter((l) => l.trim().length > 0);
+
+  return (
+    <div className="flex flex-col gap-2 text-sm leading-relaxed text-foreground">
+      {lines.map((line, idx) => {
+        const isBullet = /^[•\-*]\s+/.test(line.trim());
+        const cleanLine = line.trim().replace(/^[•\-*]\s+/, "");
+        const tokens = cleanLine.split(/(\b(?:artış|büyüme|yükseliş|rekor|zirve|düşüş|azalış|daralma|gerileme|kayıp|risk)\b|[-+]?%?\d+(?:[.,]\d+)?%?)/gi);
+
+        return (
+          <p key={idx} className={cn("flex items-start gap-2", isBullet && "pl-1.5")}>
+            {isBullet && <span className="mt-2 size-1.5 shrink-0 rounded-full bg-outbound" aria-hidden />}
+            <span className="flex-1">
+              {tokens.map((token, tIdx) => {
+                const lower = token.toLowerCase();
+                const isGrowth = /^(artış|büyüme|yükseliş|rekor|zirve)$/.test(lower) || /^\+|^%\+/.test(token);
+                const isDecline = /^(düşüş|azalış|daralma|gerileme|kayıp|risk)$/.test(lower) || /^-\d|^%-\d/.test(token);
+
+                if (isGrowth) {
+                  return (
+                    <span
+                      key={tIdx}
+                      className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-1.5 py-0.5 font-mono text-xs font-semibold text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 mx-0.5 align-baseline"
+                    >
+                      <TrendingUp className="size-3 shrink-0" />
+                      {token}
+                    </span>
+                  );
+                }
+                if (isDecline) {
+                  return (
+                    <span
+                      key={tIdx}
+                      className="inline-flex items-center gap-1 rounded-md bg-rose-500/10 px-1.5 py-0.5 font-mono text-xs font-semibold text-rose-600 dark:text-rose-400 border border-rose-500/25 mx-0.5 align-baseline"
+                    >
+                      <TrendingDown className="size-3 shrink-0" />
+                      {token}
+                    </span>
+                  );
+                }
+                if (/\d+%/.test(token) || /%\d+/.test(token)) {
+                  return (
+                    <span key={tIdx} className="font-mono font-semibold text-foreground underline decoration-outbound/50 decoration-2 underline-offset-2">
+                      {token}
+                    </span>
+                  );
+                }
+                return token;
+              })}
+            </span>
+          </p>
+        );
+      })}
+    </div>
   );
 }
 

@@ -69,7 +69,7 @@ export async function mockApi(
 export async function openDemo(page: Page, title = "E-ticaret satışları") {
   await page.goto("/");
   await page.getByRole("button", { name: new RegExp(title) }).click();
-  await page.getByRole("tab", { name: "Veri önizlemesi" }).waitFor({ timeout: 45_000 });
+  await page.getByRole("tab", { name: "Veri Tablosu" }).waitFor({ timeout: 45_000 });
 }
 
 export async function ask(page: Page, question: string) {

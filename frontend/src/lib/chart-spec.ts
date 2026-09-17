@@ -21,6 +21,7 @@ export interface Series {
 export type ChartSpec =
   | { kind: "line"; x: string; series: Series[]; percent: boolean; yLabel: string }
   | { kind: "bar"; x: string; categories: string[]; series: Series[]; percent: boolean; yLabel: string }
+  | { kind: "donut"; x: string; series: { name: string; value: number }[]; percent: boolean; yLabel: string }
   | { kind: "scatter"; x: string; y: string; series: Series[] }
   | { kind: "kpi"; items: { label: string; value: number | string; percent: boolean }[] }
   | { kind: "table" };
@@ -133,6 +134,28 @@ function bar(result: QueryResult, times: string[], numbers: string[], cats: stri
   };
 }
 
+function donut(result: QueryResult, times: string[], numbers: string[], cats: string[]): ChartSpec | null {
+  const labelCols = [...cats, ...times];
+  if (labelCols.length !== 1 || numbers.length === 0 || result.rows.length < 2 || result.rows.length > 12) return null;
+  const [x] = labelCols;
+  const [valCol] = numbers;
+  const values = result.rows.map((r) => num(r[valCol]));
+  if (values.some((v) => v === null || v < 0)) return null;
+  const total = values.reduce((acc: number, v) => acc + (v ?? 0), 0);
+  if (!total || total <= 0) return null;
+
+  return {
+    kind: "donut",
+    x,
+    yLabel: humanize(valCol),
+    percent: isRate(result, valCol),
+    series: result.rows.map((r) => ({
+      name: String(r[x] ?? "—"),
+      value: num(r[valCol]) ?? 0,
+    })),
+  };
+}
+
 function sameMagnitude(result: QueryResult, cols: string[]): boolean {
   if (cols.length < 2) return true;
   const maxes = cols.map((c) => Math.max(...result.rows.map((r) => Math.abs(num(r[c]) ?? 0))));
@@ -150,6 +173,104 @@ function scatter(result: QueryResult, numbers: string[]): ChartSpec | null {
   return { kind: "scatter", x, y, series: [{ name: `${humanize(x)} – ${humanize(y)}`, data: points }] };
 }
 
+export interface ChartKindOption {
+  kind: ChartKind;
+  label: string;
+  available: boolean;
+  reason?: string;
+}
+
+/** Veri yapısına göre hangi grafik türlerinin geçerli olduğunu hesaplar ve geçersiz olanların nedenini döner. */
+export function getAvailableChartKinds(result: QueryResult): ChartKindOption[] {
+  if (result.rows.length === 0) {
+    return [
+      { kind: "bar", label: "Sütun", available: false, reason: "Boş sonuç tablosu" },
+      { kind: "line", label: "Çizgi", available: false, reason: "Boş sonuç tablosu" },
+      { kind: "donut", label: "Halka", available: false, reason: "Boş sonuç tablosu" },
+      { kind: "scatter", label: "Dağılım", available: false, reason: "Boş sonuç tablosu" },
+      { kind: "kpi", label: "KPI", available: false, reason: "Boş sonuç tablosu" },
+      { kind: "table", label: "Tablo", available: true },
+    ];
+  }
+
+  const roles = columnRoles(result);
+  const of = (role: ColumnRole) => result.columns.filter((c) => roles[c] === role);
+  const numbers = of("number");
+  const times = of("time");
+  const cats = of("category");
+  const labelCols = [...cats, ...times];
+  const rowCount = result.rows.length;
+
+  // Bar check
+  const barOk = labelCols.length === 1 && numbers.length >= 1 && rowCount >= 1 && rowCount <= MAX_BAR_ROWS;
+  const barReason = !barOk
+    ? rowCount > MAX_BAR_ROWS
+      ? `Çok fazla kategori (${rowCount} satır, maksimum ${MAX_BAR_ROWS})`
+      : numbers.length === 0
+      ? "Sayısal sütun bulunamadı"
+      : labelCols.length === 0
+      ? "Kategori veya zaman sütunu gerekli"
+      : "Çoklu kategori boyutu bar grafiğine uygun değil"
+    : undefined;
+
+  // Line check
+  const lineOk = ((times.length === 1 && numbers.length >= 1) || (cats.length === 1 && numbers.length === 1)) && rowCount >= 2;
+  const lineReason = !lineOk
+    ? rowCount < 2
+      ? "Trend grafiği için en az 2 veri noktası gerekli"
+      : times.length === 0 && cats.length !== 1
+      ? "Zaman sütunu (tarih) veya sıralı seri gerekli"
+      : numbers.length === 0
+      ? "Sayısal değer sütunu gerekli"
+      : "Zaman serisi yapısına uymuyor"
+    : undefined;
+
+  // Donut check
+  const hasNegative = numbers.length > 0 && result.rows.some((r) => {
+    const v = num(r[numbers[0]]);
+    return v !== null && v < 0;
+  });
+  const donutOk = labelCols.length === 1 && numbers.length >= 1 && rowCount >= 2 && rowCount <= 12 && !hasNegative;
+  const donutReason = !donutOk
+    ? rowCount < 2
+      ? "Paylaşım oranı için en az 2 kategori gerekli"
+      : rowCount > 12
+      ? `Halka grafik için çok fazla dilim (${rowCount} satır, maksimum 12)`
+      : numbers.length === 0
+      ? "Sayısal pay sütunu gerekli"
+      : hasNegative
+      ? "Negatif değerler pasta/halka grafikte gösterilemez"
+      : "Tek kategori ve pozitif sayısal sütun gerekli"
+    : undefined;
+
+  // Scatter check
+  const scatterOk = numbers.length >= 2 && rowCount >= 3;
+  const scatterReason = !scatterOk
+    ? numbers.length < 2
+      ? "Korelasyon için en az 2 sayısal sütun gerekli"
+      : "Dağılım için en az 3 satır veri gerekli"
+    : undefined;
+
+  // KPI check
+  const kpiOk = rowCount === 1 && numbers.length >= 1 && numbers.length <= 6;
+  const kpiReason = !kpiOk
+    ? rowCount !== 1
+      ? "KPI yalnızca tek satırlık özet metrikler içindir"
+      : numbers.length === 0
+      ? "Sayısal metrik bulunamadı"
+      : "6'dan fazla metrik kartı desteklenmez"
+    : undefined;
+
+  return [
+    { kind: "bar", label: "Sütun", available: barOk, reason: barReason },
+    { kind: "line", label: "Çizgi", available: lineOk, reason: lineReason },
+    { kind: "donut", label: "Halka", available: donutOk, reason: donutReason },
+    { kind: "scatter", label: "Dağılım", available: scatterOk, reason: scatterReason },
+    { kind: "kpi", label: "KPI", available: kpiOk, reason: kpiReason },
+    { kind: "table", label: "Tablo", available: true },
+  ];
+}
+
 export function buildChartSpec(hint: ChartKind, result: QueryResult): ChartSpec {
   if (result.rows.length === 0) return { kind: "table" };
   const roles = columnRoles(result);
@@ -162,15 +283,16 @@ export function buildChartSpec(hint: ChartKind, result: QueryResult): ChartSpec 
     kpi: () => kpi(result, numbers),
     line: () => line(result, times, numbers, cats),
     bar: () => bar(result, times, numbers, cats),
+    donut: () => donut(result, times, numbers, cats),
     scatter: () => scatter(result, numbers),
   };
 
   if (hint !== "table") {
-    const fromHint = builders[hint]();
+    const fromHint = builders[hint]?.();
     if (fromHint) return fromHint;
   }
-  // İpucu uymadıysa şekle göre en uygun tür.
-  for (const kind of ["kpi", "line", "bar", "scatter"] as const) {
+  // İpucu uymadıysa şekle göre en uygun tür seçilir.
+  for (const kind of ["kpi", "line", "bar", "donut", "scatter"] as const) {
     const spec = builders[kind]();
     if (spec) return spec;
   }

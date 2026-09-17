@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight, Cpu, Database, FileSpreadsheet, FileUp, HardDrive, LayoutGrid, Layers, Loader2, Lock, ShieldCheck, Sparkles, Terminal, Zap } from "lucide-react";
+import { ArrowUpRight, Database, FileSpreadsheet, FileUp, LayoutGrid, Loader2, ShieldCheck, Zap } from "lucide-react";
 import { useRef, useState } from "react";
 import { DataMorphCanvas } from "@/components/ui/data-morph-canvas";
 import { DEMO_DATASETS, fetchDemoFiles, type DemoDataset } from "@/lib/demo";

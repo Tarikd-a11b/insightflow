@@ -64,7 +64,9 @@ function isMonthly(dates: string[]): boolean {
 }
 
 export function chartHeight(spec: PlotSpec): number {
-  return spec.kind === "bar" ? Math.max(180, spec.categories.length * (spec.series.length > 1 ? 36 : 30) + 52) : 290;
+  if (spec.kind === "bar") return Math.max(180, spec.categories.length * (spec.series.length > 1 ? 36 : 30) + 52);
+  if (spec.kind === "donut") return 290;
+  return 290;
 }
 
 export function buildOption(spec: PlotSpec, t: ChartTheme): EChartsCoreOption {
@@ -190,6 +192,54 @@ export function buildOption(spec: PlotSpec, t: ChartTheme): EChartsCoreOption {
           : { show: false },
         emphasis: { focus: multi ? "series" : "none" },
       })),
+    };
+  }
+
+  if (spec.kind === "donut") {
+    return {
+      ...base,
+      tooltip: {
+        ...tooltipBase,
+        trigger: "item",
+        formatter: (p: { name: string; value: number; percent: number; color: string }) =>
+          `<div style="margin-bottom:4px;color:${muted}">${esc(p.name)}</div><div>${swatch(p.color)}<b>${formatValue(p.value, spec.percent)}</b> <span style="color:${muted};margin-left:6px">(${p.percent}%)</span></div>`,
+      },
+      legend: {
+        orient: "horizontal",
+        bottom: 6,
+        left: "center",
+        icon: "circle",
+        itemWidth: 8,
+        itemHeight: 8,
+        textStyle: { color: muted, fontSize: 11, fontFamily: t.bodyFont },
+      },
+      series: [
+        {
+          name: spec.yLabel,
+          type: "pie",
+          radius: ["44%", "72%"],
+          center: ["50%", "45%"],
+          avoidLabelOverlap: true,
+          itemStyle: {
+            borderRadius: 6,
+            borderColor: surface,
+            borderWidth: 2,
+          },
+          label: {
+            show: spec.series.length <= 6,
+            formatter: "{b}: {d}%",
+            fontSize: 11,
+            color: muted,
+            fontFamily: t.bodyFont,
+          },
+          emphasis: {
+            scale: true,
+            scaleSize: 6,
+            label: { show: true, fontWeight: "bold", color: ink },
+          },
+          data: spec.series,
+        },
+      ],
     };
   }
 

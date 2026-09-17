@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowUp, Compass, CornerDownRight, Database, FileSpreadsheet, HardDrive, LayoutGrid, LayoutTemplate, Loader2, RefreshCw, ShieldCheck, Sparkles, Square, Table2, Wand2, X } from "lucide-react";
+import { ArrowLeft, ArrowUp, Compass, CornerDownRight, Database, LayoutTemplate, Loader2, RefreshCw, ShieldCheck, Sparkles, Square, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, checkHealth, toColumnPayload, type HistoryItem, type SchemaPayload } from "@/lib/api";
 import { ask } from "@/lib/ask";
@@ -472,7 +472,8 @@ export function Workspace() {
 
             {view === "preview" && (
               <span className="hidden font-mono text-xs text-muted-foreground sm:inline">
-                {shownTable?.table} &bull; İlk {formatInt((ready.previews[shownTable?.table ?? PRIMARY_TABLE] ?? ready.preview).rows.length)} satır
+                {shownTable?.table} &bull; ilk {formatInt((ready.previews[shownTable?.table ?? PRIMARY_TABLE] ?? ready.preview).rows.length)} /{" "}
+                {formatInt(shownTable?.rowCount ?? ready.profile.rowCount)} satır
               </span>
             )}
           </div>

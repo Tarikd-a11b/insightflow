@@ -6,7 +6,7 @@
  * Hiçbir istek atılmaz; yalnızca kendi alan adımızdaki font dosyaları okunur.
  */
 
-import { BarChart, LineChart, ScatterChart } from "echarts/charts";
+import { BarChart, LineChart, PieChart, ScatterChart } from "echarts/charts";
 import { GridComponent, LegendComponent } from "echarts/components";
 import * as echarts from "echarts/core";
 import { SVGRenderer } from "echarts/renderers";
@@ -19,7 +19,7 @@ import { buildChartSpec, columnRoles, isRate } from "./chart-spec";
 import type { QueryResult } from "./data/types";
 import { formatCell } from "./format";
 
-echarts.use([LineChart, BarChart, ScatterChart, GridComponent, LegendComponent, SVGRenderer]);
+echarts.use([LineChart, BarChart, PieChart, ScatterChart, GridComponent, LegendComponent, SVGRenderer]);
 
 export interface ReportItem {
   question: string;
@@ -169,13 +169,35 @@ function drawTable(doc: jsPDF, cur: Cursor, result: QueryResult, maxRows: number
   cur.y += 3;
 }
 
-function drawCover(doc: jsPDF, cur: Cursor, items: ReportItem[], generatedAt: Date) {
+export interface ReportOptions {
+  title?: string;
+  note?: string;
+  generatedAt?: Date;
+}
+
+function drawCover(doc: jsPDF, cur: Cursor, items: ReportItem[], options: ReportOptions) {
+  const generatedAt = options.generatedAt ?? new Date();
+  const title = options.title?.trim() || "InsightFlow analiz raporu";
+
   doc.setFillColor(...LOCAL);
   doc.rect(PAGE.margin, cur.y, 14, 1.2, "F");
   cur.y += 6;
-  text(doc, cur, "InsightFlow analiz raporu", { size: 22, bold: true, gap: 1 });
+  text(doc, cur, title, { size: 22, bold: true, gap: 1 });
   const datasets = [...new Set(items.map((i) => i.datasetName))];
   text(doc, cur, `${dateTimeFmt.format(generatedAt)} · ${items.length} analiz · ${datasets.join(", ")}`, { size: 9.5, color: MUTED, gap: 5 });
+
+  if (options.note?.trim()) {
+    const noteLines: string[] = doc.splitTextToSize(options.note.trim(), CONTENT_W - 10);
+    const noteH = Math.max(16, 8 + noteLines.length * 4.5);
+    doc.setDrawColor(...OUTBOUND);
+    doc.setFillColor(245, 247, 255);
+    doc.roundedRect(PAGE.margin, cur.y, CONTENT_W, noteH, 2, 2, "FD");
+    doc.setFont(FONT, "bold").setFontSize(8.5).setTextColor(...OUTBOUND);
+    doc.text("YÖNETİCİ NOTU & RAPOR ÖZETİ", PAGE.margin + 5, cur.y + 6);
+    doc.setFont(FONT, "normal").setFontSize(9).setTextColor(...INK);
+    doc.text(noteLines, PAGE.margin + 5, cur.y + 11);
+    cur.y += noteH + 6;
+  }
 
   const boxH = 17;
   doc.setDrawColor(...LINE);
@@ -208,15 +230,16 @@ function drawFooters(doc: jsPDF) {
   }
 }
 
-export async function buildReport(items: ReportItem[], generatedAt = new Date()): Promise<jsPDF> {
+export async function buildReport(items: ReportItem[], options: ReportOptions = {}): Promise<jsPDF> {
   if (items.length === 0) throw new Error("Rapor için en az bir analiz gerekli.");
   const doc = new jsPDF({ unit: "mm", format: "a4", compress: true });
-  doc.setProperties({ title: "InsightFlow analiz raporu", creator: "InsightFlow" });
+  const title = options.title?.trim() || "InsightFlow analiz raporu";
+  doc.setProperties({ title, creator: "InsightFlow" });
   await registerFonts(doc);
   // jsPDF'in varsayılan 0,2 mm çizgisi kutu ve ayırıcılarda ağır duruyor; ince saç çizgisi kullan.
   doc.setLineWidth(HAIRLINE);
   const cur = new Cursor(doc);
-  drawCover(doc, cur, items, generatedAt);
+  drawCover(doc, cur, items, options);
 
   for (const [index, item] of items.entries()) {
     // Başlık ve görsel bölünmesin: kısa kalan sayfada yeni sayfaya geç.
@@ -272,7 +295,7 @@ export function reportFileName(date = new Date()): string {
   return `insightflow-rapor-${d}.pdf`;
 }
 
-export async function downloadReport(items: ReportItem[]): Promise<void> {
-  const doc = await buildReport(items);
-  doc.save(reportFileName());
+export async function downloadReport(items: ReportItem[], options: ReportOptions = {}): Promise<void> {
+  const doc = await buildReport(items, options);
+  doc.save(reportFileName(options.generatedAt));
 }

@@ -22,7 +22,7 @@ export function DataMorphCanvas({ className }: { className?: string }) {
     };
     window.addEventListener("resize", onResize);
 
-    let mouse = { x: width / 2, y: height / 2, active: false };
+    const mouse = { x: width / 2, y: height / 2, active: false };
     const onMouseMove = (e: MouseEvent) => {
       mouse.x = e.clientX;
       mouse.y = e.clientY;
@@ -241,7 +241,7 @@ export function DataMorphCanvas({ className }: { className?: string }) {
       ctx.fillText("🍩 PAY // PIE", donutX - 32, donutY + donutRadius + 16);
 
       // D) Uçuşan Veri Parçacıkları ve Bağlantı Çizgileri (Data Stream Connectors)
-      for (let p of particles) {
+      for (const p of particles) {
         p.y -= 0.6;
         if (p.y < 0) {
           p.y = height + 10;

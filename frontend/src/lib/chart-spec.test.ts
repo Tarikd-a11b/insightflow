@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildChartSpec, isRate, MAX_SERIES } from "./chart-spec";
+import { buildChartSpec, getAvailableChartKinds, isRate, MAX_SERIES } from "./chart-spec";
 import type { QueryResult } from "./data/types";
 
 const result = (columns: string[], rows: unknown[][]): QueryResult => ({
@@ -65,6 +65,30 @@ describe("buildChartSpec", () => {
   it("grafiğe uygun olmayan sonucu tabloda bırakır", () => {
     expect(buildChartSpec("bar", result(["ad", "sehir"], [["a", "b"], ["c", "d"]])).kind).toBe("table");
     expect(buildChartSpec("bar", result(["x"], [])).kind).toBe("table");
+  });
+
+  it("uygun kategori ve pozitif değerleri donut/halka grafiğe çevirir", () => {
+    const spec = buildChartSpec("donut", result(["kategori", "tutar"], [["Elektronik", 1500], ["Giyim", 800], ["Gıda", 600]]));
+    expect(spec.kind).toBe("donut");
+    if (spec.kind === "donut") {
+      expect(spec.series).toHaveLength(3);
+      expect(spec.series[0]).toEqual({ name: "Elektronik", value: 1500 });
+    }
+  });
+
+  it("negatif değer içeren veriyi donut grafiğe çevirmez", () => {
+    const spec = buildChartSpec("donut", result(["kategori", "kar"], [["A", 100], ["B", -50]]));
+    expect(spec.kind).not.toBe("donut");
+  });
+
+  it("getAvailableChartKinds doğru kısıt ve nedenleri döner", () => {
+    const timeData = result(["ay", "ciro"], [["2024-01-01", 100], ["2024-02-01", 150]]);
+    const options = getAvailableChartKinds(timeData);
+    const lineOpt = options.find((o) => o.kind === "line");
+    const scatterOpt = options.find((o) => o.kind === "scatter");
+    expect(lineOpt?.available).toBe(true);
+    expect(scatterOpt?.available).toBe(false);
+    expect(scatterOpt?.reason).toContain("en az 2 sayısal");
   });
 });
 

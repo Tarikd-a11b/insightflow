@@ -19,7 +19,7 @@ test.describe("veri çekirdeği", () => {
 
     await expect(ledger(page)).toContainText("26.403 satır");
     await expect(ledger(page)).toContainText("hiçbir şey");
-    await expect(page.getByRole("heading", { name: "Sütunlar" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Şema ve Sütun Profili" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Aylara göre toplam_tutar nasıl değişti?" })).toBeVisible();
     await expect(page.locator("table tbody tr")).toHaveCount(100);
   });
@@ -32,7 +32,7 @@ test.describe("veri çekirdeği", () => {
       mimeType: "text/csv",
       buffer: Buffer.from("tarih;bolge;tutar\n2025-01-03;Ege;1250,5\n2025-01-04;Marmara;980\n", "utf-8"),
     });
-    await page.getByRole("tab", { name: "Veri önizlemesi" }).waitFor({ timeout: 45_000 });
+    await page.getByRole("tab", { name: "Veri Tablosu" }).waitFor({ timeout: 45_000 });
     const tutar = page.locator("section[aria-labelledby=schema-heading] li").filter({ has: page.locator('[title="tutar"]') });
     await expect(tutar).toContainText("double");
     await expect(tutar).toContainText("980 – 1.250,5");
@@ -106,7 +106,7 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
     const api = await mockApi(page);
     await page.goto("/");
     await page.getByRole("button", { name: /Siparişler \+ müşteriler/ }).click();
-    await page.getByRole("tab", { name: "Veri önizlemesi" }).waitFor({ timeout: 45_000 });
+    await page.getByRole("tab", { name: "Veri Tablosu" }).waitFor({ timeout: 45_000 });
 
     // Tablolar ve tarayıcıda hesaplanan ilişki
     const tables = page.getByRole("listbox", { name: "Şeması gösterilecek tablo" });
@@ -140,7 +140,7 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
 
     // Tablo seçimi önizlemeyi ve şemayı değiştirir.
     await tables.getByRole("option", { name: /musteriler/ }).click();
-    await page.getByRole("tab", { name: "Veri önizlemesi" }).click();
+    await page.getByRole("tab", { name: "Veri Tablosu" }).click();
     await expect(page.locator("main")).toContainText("musteriler · ilk 100 / 1.500 satır");
     await expect(page.locator("section[aria-labelledby=schema-heading]")).toContainText("yas_grubu");
 
@@ -320,7 +320,9 @@ test.describe("şeffaflık, özet ve pano", () => {
     await openDemo(page);
     const card = await ask(page, "Kategori cirosu?");
     await card.getByRole("button", { name: "Panoya sabitle" }).click();
-    await expect(page.getByRole("tab", { name: "Pano (1)" })).toBeVisible();
+    const boardTab = page.getByRole("tab", { name: /Panom \(Dashboard\)/ });
+    await expect(boardTab).toBeVisible();
+    await expect(boardTab).toContainText("1");
 
     await page.reload();
     await page.getByRole("button", { name: /Panonda 1 sabitlenmiş grafik var/ }).click();
@@ -352,7 +354,9 @@ test.describe("şeffaflık, özet ve pano", () => {
     await first.getByRole("button", { name: "Gönder ve özetle" }).click();
     await expect(first.locator("blockquote")).toContainText("Giyim");
 
-    await page.getByRole("tab", { name: "Pano (3)" }).click();
+    const boardTab = page.getByRole("tab", { name: /Panom \(Dashboard\)/ });
+    await expect(boardTab).toContainText("3");
+    await boardTab.click();
     await expect(page.getByText("Giyim %14 ile en yüksek")).toBeVisible();
     const requestsBefore = api.bodies("/sql").length + api.bodies("/summary").length;
 

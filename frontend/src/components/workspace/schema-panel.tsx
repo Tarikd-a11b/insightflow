@@ -1,17 +1,9 @@
 "use client";
 
-import { Calendar, CircleHelp, Hash, KeyRound, Search, ToggleLeft, Type, X } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ColumnKind, ColumnProfile, DatasetProfile } from "@/lib/data/types";
 import { formatInt } from "@/lib/format";
-
-const KIND_ICON: Record<ColumnKind, typeof Hash> = {
-  numeric: Hash,
-  temporal: Calendar,
-  boolean: ToggleLeft,
-  text: Type,
-  other: CircleHelp,
-};
 
 const KIND_BADGE: Record<ColumnKind, { label: string; class: string }> = {
   numeric: { label: "NUM", class: "bg-blue-500/10 text-blue-500 border-blue-500/20" },

@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart, LineChart, ScatterChart } from "echarts/charts";
+import { BarChart, LineChart, PieChart, ScatterChart } from "echarts/charts";
 import { AriaComponent, GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
 import * as echarts from "echarts/core";
 import { SVGRenderer } from "echarts/renderers";
@@ -9,7 +9,7 @@ import { buildOption, chartHeight, formatKpi, PALETTE, type ChartTheme, type Plo
 import type { ChartSpec } from "@/lib/chart-spec";
 import { cn } from "@/lib/utils";
 
-echarts.use([LineChart, BarChart, ScatterChart, GridComponent, TooltipComponent, LegendComponent, AriaComponent, SVGRenderer]);
+echarts.use([LineChart, BarChart, PieChart, ScatterChart, GridComponent, TooltipComponent, LegendComponent, AriaComponent, SVGRenderer]);
 
 function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();

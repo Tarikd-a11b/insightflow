@@ -4,7 +4,7 @@ import { outboundLog, type OutboundKind } from "./outbound-log";
 /** Aynı alan adındaki vekil; next.config.ts `/api/*` isteklerini gerçek API'ye iletir. */
 export const API_URL = "/api";
 
-export type ChartKind = "line" | "bar" | "scatter" | "kpi" | "table";
+export type ChartKind = "line" | "bar" | "donut" | "scatter" | "kpi" | "table";
 
 export type SqlResponse =
   | { status: "ok"; sql: string; explanation: string; chart: ChartKind; limited: boolean }
