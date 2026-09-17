@@ -482,7 +482,7 @@ export function Workspace() {
           <div className="min-h-0 flex-1 overflow-y-auto py-4 pr-1">
             
             {view === "preview" && (
-              <div className="h-full rounded-2xl border border-border/70 bg-card/60 backdrop-blur-sm overflow-hidden p-1 shadow-sm">
+              <div className="h-full rounded-2xl border border-border/70 bg-card/60 backdrop-blur-sm overflow-hidden p-1 shadow-sm pb-36">
                 <PreviewTable
                   key={shownTable?.table}
                   result={ready.previews[shownTable?.table ?? PRIMARY_TABLE] ?? ready.preview}
@@ -493,13 +493,13 @@ export function Workspace() {
             )}
 
             {view === "board" && (
-              <div className="h-full">
+              <div className="min-h-full pb-44">
                 <Pinboard pins={pins} unavailable={pinsUnavailable} />
               </div>
             )}
 
             {view === "answers" && (
-              <div className="flex flex-col gap-6 pb-28">
+              <div className="flex flex-col gap-6 pb-44">
                 {turns.length === 0 ? (
                   <div className="mx-auto flex max-w-md flex-col items-center gap-4 py-16 text-center animate-in fade-in duration-500">
                     <div className="grid size-12 place-items-center rounded-2xl bg-local-soft text-local border border-local/30 shadow-sm">
@@ -547,7 +547,7 @@ export function Workspace() {
 
           {/* Sunucu Durum Bildirimleri */}
           {health === "waking" && (
-            <div role="status" className="mb-2 flex items-center gap-3 rounded-xl border border-outbound/30 bg-outbound-soft/60 px-4 py-2.5 text-xs text-muted-foreground backdrop-blur-md animate-in fade-in">
+            <div role="status" className="mb-2 flex items-center gap-3 rounded-xl border border-outbound/30 bg-outbound-soft/60 px-4 py-2.5 text-xs text-muted-foreground backdrop-blur-md animate-in fade-in z-20">
               <Loader2 className="size-4 shrink-0 animate-spin text-outbound" aria-hidden />
               <span>
                 <strong className="text-foreground font-semibold">Yanıt motoru hazırlanıyor…</strong> Sunucu uyanınca sorunuz otomatik işlenecek.
@@ -556,7 +556,7 @@ export function Workspace() {
           )}
 
           {(health === "unreachable" || health === "unconfigured") && (
-            <div role="alert" className="mb-2 flex items-center gap-3 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-2.5 text-xs text-destructive backdrop-blur-md animate-in fade-in">
+            <div role="alert" className="mb-2 flex items-center gap-3 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-2.5 text-xs text-destructive backdrop-blur-md animate-in fade-in z-20">
               <span>{HEALTH_MESSAGE[health]}</span>
               <button
                 type="button"
@@ -569,6 +569,9 @@ export function Workspace() {
             </div>
           )}
 
+          {/* Arka Plan Yumuşak Geçiş Maskesi (Soft Gradient Mask behind Floating Bar) */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-background via-background/70 to-transparent z-10" />
+
           {/* Floating Command Bar */}
           <div className="absolute bottom-4 left-4 right-4 sm:left-6 sm:right-6 max-w-4xl mx-auto z-20">
             <form
@@ -577,7 +580,7 @@ export function Workspace() {
                 void submit(question);
               }}
               className={cn(
-                "relative flex flex-col gap-2 rounded-2xl border border-border/80 bg-card/90 p-3 shadow-2xl backdrop-blur-2xl transition-all duration-300 focus-within:border-foreground/40 focus-within:shadow-indigo-500/10",
+                "relative flex flex-col gap-2 rounded-2xl border border-border/80 bg-card/95 p-3 shadow-2xl backdrop-blur-2xl transition-all duration-300 focus-within:border-foreground/40 focus-within:shadow-indigo-500/10",
                 inputLocked && "opacity-60"
               )}
             >
