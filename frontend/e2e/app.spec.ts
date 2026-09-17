@@ -21,6 +21,7 @@ test.describe("veri çekirdeği", () => {
     await expect(ledger(page)).toContainText("hiçbir şey");
     await expect(page.getByRole("heading", { name: "Şema ve Sütun Profili" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Aylara göre toplam_tutar nasıl değişti?" })).toBeVisible();
+    await page.getByRole("tab", { name: "Veri Tablosu" }).click();
     await expect(page.locator("table tbody tr")).toHaveCount(100);
   });
 
@@ -35,7 +36,7 @@ test.describe("veri çekirdeği", () => {
     await page.getByRole("tab", { name: "Veri Tablosu" }).waitFor({ timeout: 45_000 });
     const tutar = page.locator("section[aria-labelledby=schema-heading] li").filter({ has: page.locator('[title="tutar"]') });
     await expect(tutar).toContainText("double");
-    await expect(tutar).toContainText("980 – 1.250,5");
+    await expect(tutar).toContainText("980 → 1.250,5");
   });
 });
 
@@ -47,7 +48,7 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
 
     const card = await ask(page, "Şehir bazında ciro?");
     await expect(card.locator("[data-chart] svg")).toBeVisible();
-    await expect(card).toContainText("8 satır");
+    await expect(card).toContainText("8 Satır");
 
     const [body] = api.bodies("/sql");
     expect(Object.keys(body).sort()).toEqual(["columns", "question"]);
@@ -69,7 +70,7 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
 
     const card = await ask(page, "Kaç sipariş var?");
     await expect(card.locator("dl")).toContainText("26.403");
-    await expect(card).toContainText("1 otomatik onarım");
+    await expect(card).toContainText("1 Self-Healing Onarım");
 
     const [repair] = api.bodies("/repair");
     expect(repair.attempt).toBe(1);
@@ -127,7 +128,7 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
     );
     const card = await ask(page, "Hangi segment en çok harcıyor?");
     await expect(card.locator("[data-chart] svg")).toBeVisible();
-    await expect(card).toContainText("3 satır");
+    await expect(card).toContainText("3 Satır");
     await card.getByRole("tab", { name: "Tablo" }).click();
     await expect(card.locator("tbody tr").first()).toContainText("Kurumsal");
 
@@ -141,7 +142,7 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
     // Tablo seçimi önizlemeyi ve şemayı değiştirir.
     await tables.getByRole("option", { name: /musteriler/ }).click();
     await page.getByRole("tab", { name: "Veri Tablosu" }).click();
-    await expect(page.locator("main")).toContainText("musteriler · ilk 100 / 1.500 satır");
+    await expect(page.locator("main")).toContainText("musteriler • ilk 100 / 1.500 satır");
     await expect(page.locator("section[aria-labelledby=schema-heading]")).toContainText("yas_grubu");
 
     // Dosya eklenir ve çıkarılır (motor tüm dosyalarla yeniden kurulur, kilit yeniden uygulanır).
@@ -162,8 +163,8 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
     page.on("request", (req) => /\/api\/(sql|repair|summary)/.test(req.url()) && apiCalls.push(req.url()));
     await openDemo(page);
 
-    await page.getByRole("button", { name: /Veriyi keşfet/ }).first().click();
-    const insights = page.locator("article").filter({ hasText: "Otomatik keşif · model kullanılmadı" });
+    await page.getByRole("button", { name: /Veriyi Otomatik Keşfet/ }).first().click();
+    const insights = page.locator("article").filter({ hasText: "Otomatik EDA Keşif Analizi" });
     await expect(insights).toHaveCount(5);
     expect(apiCalls).toHaveLength(0);
 
@@ -180,7 +181,7 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
 
     // İçgörüden devam: modele içgörünün SQL'i bağlam olarak gider.
     api.queue("/sql", sqlOk("SELECT date_trunc('month', siparis_tarihi) AS ay, kanal, SUM(toplam_tutar) AS ciro FROM data GROUP BY 1, 2 ORDER BY 1", "line"));
-    await insights.first().getByRole("button", { name: "Buna devam et" }).click();
+    await insights.first().getByRole("button", { name: "Takip Sorusu" }).click();
     await ask(page, "Bunu kanal bazında kır");
     const [body] = api.bodies("/sql");
     expect((body.history as { question: string; sql: string }[])[0]).toMatchObject({ question: "Aylık toplam_tutar trendi", sql: expect.stringContaining("date_trunc") });
@@ -201,7 +202,7 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
     await expect(page.locator("form")).toContainText("Önceki soruyla bağlantılı");
     const b = await ask(page, "Sadece 2025");
     expect(api.bodies("/sql")[1].history).toEqual([{ question: "Kategori bazında ciro?", sql: expect.stringContaining("SUM(toplam_tutar)") }]);
-    await expect(b).toContainText("“Kategori bazında ciro?” sorusunun devamı");
+    await expect(b).toContainText("“Kategori bazında ciro?” sorgusunun devamı");
 
     // Bağlam kaldırılınca soru bağımsız gider.
     await page.getByRole("button", { name: "Önceki soruyla bağlantıyı kaldır" }).click();
@@ -209,7 +210,7 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
     expect(api.bodies("/sql")[2]).not.toHaveProperty("history");
 
     // Eski bir karttan devam: yalnızca o kartın zinciri gider (B → A).
-    await page.locator("article").nth(1).getByRole("button", { name: "Buna devam et" }).click();
+    await page.locator("article").nth(1).getByRole("button", { name: "Takip Sorusu" }).click();
     await expect(page.locator("form")).toContainText("Sadece 2025");
     await ask(page, "Bunu grafik yerine tablo olarak ver");
     const history = api.bodies("/sql")[3].history as { question: string }[];
@@ -221,7 +222,7 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
     api.queue("/sql", sqlOk("SELECT islem_turu, SUM(tutar_try) AS toplam FROM data GROUP BY 1", "bar"));
     await openDemo(page, "Gelir & gider");
 
-    await page.getByRole("button", { name: "Örnek değerleri paylaş" }).click();
+    await page.getByRole("button", { name: "Örnek Değer Paylaş" }).click();
     const dialog = page.locator("dialog[open]");
     const turu = dialog.locator("label").filter({ hasText: "islem_turu" });
     await expect(turu).toContainText("Gelir");
@@ -230,7 +231,7 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
     await dialog.locator("label").filter({ hasText: "departman" }).getByRole("checkbox").uncheck();
     await expect(dialog).toContainText("Modele 11 değer gidecek");
     await dialog.getByRole("button", { name: "Seçilenleri paylaş" }).click();
-    await expect(page.locator("form")).toContainText("11 örnek değer");
+    await expect(page.locator("form")).toContainText("11 Örnek Değer");
 
     await ask(page, "Net kâr nedir?");
     const [body] = api.bodies("/sql");
@@ -242,7 +243,7 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
     await expect(page.locator("[data-ledger]")).toContainText("11 örnek değer");
 
     // Paylaşım kapatılınca sonraki sorularda değer gitmez.
-    await page.getByRole("button", { name: "Örnek değerleri düzenle" }).click();
+    await page.getByRole("button", { name: /Örnek Değer/ }).click();
     await page.locator("dialog[open]").getByRole("button", { name: "Paylaşmayı kapat" }).click();
     api.queue("/sql", sqlOk("SELECT COUNT(*) AS n FROM data", "kpi"));
     await ask(page, "Kaç işlem var?");
@@ -254,7 +255,7 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
     const sqlRequests: string[] = [];
     page.on("request", (req) => req.url().includes("/api/sql") && sqlRequests.push(req.url()));
     await openDemo(page, "Gelir & gider");
-    await expect(page.getByRole("status").filter({ hasText: "Yanıt motoru uyanıyor" })).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "Yanıt motoru hazırlanıyor" })).toBeVisible();
 
     await page.locator("#question").fill("Toplam gider nedir?");
     await page.keyboard.press("Enter");
@@ -274,7 +275,7 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
     const api = await mockApi(page, { sleepingHealthChecks: 6 });
     api.queue("/sql", sqlOk("SELECT COUNT(*) AS islem_sayisi FROM data", "kpi"));
     await openDemo(page, "Gelir & gider");
-    await expect(page.getByRole("status").filter({ hasText: "uyanıyor" })).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "hazırlanıyor" })).toBeVisible();
 
     await page.locator("#question").fill("Kaç işlem var?");
     await page.keyboard.press("Enter");
@@ -284,7 +285,7 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
 
     await expect(card.locator("dl")).toContainText("1.068", { timeout: 45_000 });
     expect(api.bodies("/sql")).toHaveLength(1);
-    await expect(page.getByRole("status").filter({ hasText: "uyanıyor" })).toHaveCount(0);
+    await expect(page.getByRole("status").filter({ hasText: "hazırlanıyor" })).toHaveCount(0);
   });
 });
 
@@ -325,7 +326,7 @@ test.describe("şeffaflık, özet ve pano", () => {
     await expect(boardTab).toContainText("1");
 
     await page.reload();
-    await page.getByRole("button", { name: /Panonda 1 sabitlenmiş grafik var/ }).click();
+    await page.getByRole("button", { name: /Panoda 1 sabitlenmiş analiz var/ }).click();
     await expect(page.getByRole("heading", { name: "Kategori cirosu?" })).toBeVisible();
     await expect(page.locator("[data-chart] svg")).toBeVisible();
     // Yeni oturumda modele giden kayıt sıfırdır; pano yerel olduğu için şerit etkilenmez.
@@ -360,7 +361,7 @@ test.describe("şeffaflık, özet ve pano", () => {
     await expect(page.getByText("Giyim %14 ile en yüksek")).toBeVisible();
     const requestsBefore = api.bodies("/sql").length + api.bodies("/summary").length;
 
-    const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Raporu indir (PDF)" }).click()]);
+    const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Raporu İndir (PDF)" }).click()]);
     expect(download.suggestedFilename()).toMatch(/^insightflow-rapor-\d{4}-\d{2}-\d{2}\.pdf$/);
     const file = testInfo.outputPath("rapor.pdf");
     await download.saveAs(file);
@@ -370,7 +371,7 @@ test.describe("şeffaflık, özet ve pano", () => {
     expect(bytes.length).toBeGreaterThan(30_000); // gömülü font + vektörel grafikler
     // Rapor üretimi hiçbir API isteği atmaz.
     expect(api.bodies("/sql").length + api.bodies("/summary").length).toBe(requestsBefore);
-    await expect(page.getByRole("button", { name: "Raporu indir (PDF)" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Raporu İndir (PDF)" })).toBeEnabled();
     await expect(page.getByText("Rapor oluşturulamadı.")).toHaveCount(0);
     if (process.env.REPORT_COPY_TO) await download.saveAs(process.env.REPORT_COPY_TO);
   });
