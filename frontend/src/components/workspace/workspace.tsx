@@ -1,9 +1,10 @@
 "use client";
 
-import { ArrowLeft, ArrowUp, Compass, CornerDownRight, Database, FileSpreadsheet, HardDrive, LayoutGrid, Loader2, RefreshCw, ShieldCheck, Sparkles, Square, Table2, X } from "lucide-react";
+import { ArrowLeft, ArrowUp, Compass, CornerDownRight, Database, FileSpreadsheet, HardDrive, LayoutGrid, LayoutTemplate, Loader2, RefreshCw, ShieldCheck, Sparkles, Square, Table2, Wand2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, checkHealth, toColumnPayload, type HistoryItem, type SchemaPayload } from "@/lib/api";
 import { ask } from "@/lib/ask";
+import { generateAutoDashboard } from "@/lib/dashboard-generator";
 import { suggestJoinQuestions, suggestQuestions } from "@/lib/data/questions";
 import { PRIMARY_TABLE, relationshipPayload } from "@/lib/data/tables";
 import { countSharedValues, MAX_SHARED_VALUES, type SharedValues } from "@/lib/data/sample-values";
@@ -43,20 +44,18 @@ export function Workspace() {
   const [view, setView] = useState<View>("answers");
   const [boardOnly, setBoardOnly] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
-  // Onayla paylaşılan örnek değerler (sütun → değerler). Boş = yalnızca şema gider.
   const [sharedValues, setSharedValues] = useState<SharedValues>({});
   const [valuesDialogOpen, setValuesDialogOpen] = useState(false);
   const [health, setHealth] = useState<HealthState>("checking");
   const [contextChoice, setContextChoice] = useState<ContextChoice>({ mode: "auto" });
   const [exploring, setExploring] = useState(false);
-  // Şema panelinde ve önizlemede gösterilen tablo.
+  const [generatingDashboard, setGeneratingDashboard] = useState(false);
   const [selectedTable, setSelectedTable] = useState(PRIMARY_TABLE);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const nextId = useRef(1);
   const stopHealthRef = useRef<(() => void) | null>(null);
-  // Sunucu uyanırken sorulan soru burada bekler; sağlık durumu "ok" olunca gönderilir.
   const pendingRef = useRef<{ id: number; question: string; schema: SchemaPayload; history: HistoryItem[] } | null>(null);
   const healthRef = useRef<HealthState>("checking");
   const onHealthRef = useRef<(state: HealthState) => void>(() => {});
@@ -86,17 +85,14 @@ export function Workspace() {
     () => turns.map((t) => ({ id: t.id, question: t.question, parentId: t.parentId, sql: t.outcome?.kind === "answer" ? t.outcome.sql : undefined })),
     [turns],
   );
-  // Otomatik bağlam yalnızca kullanıcının sorduğu sorulardan gelir; keşif içgörüsüne "Buna devam et" ile açıkça bağlanılır.
   const autoContextId = useMemo(
     () => latestAnsweredId(contextTurns.filter((t) => turns.find((x) => x.id === t.id)?.origin !== "explore")),
     [contextTurns, turns],
   );
   const contextId = contextChoice.mode === "none" ? null : contextChoice.mode === "turn" ? contextChoice.id : autoContextId;
   const contextQuestion = contextId === null ? null : (turns.find((t) => t.id === contextId)?.question ?? null);
-  // Uyanırken de soru yazılıp gönderilebilir (kuyruğa alınır); yalnızca kesin ulaşılamazlıkta kilitlenir.
   const inputLocked = health === "unreachable" || health === "unconfigured";
 
-  // Ulaşılamazsa uyanma penceresi boyunca kendiliğinden yeniden dener.
   const refreshHealth = useCallback(() => {
     stopHealthRef.current?.();
     stopHealthRef.current = watchHealth(checkHealth, (state) => onHealthRef.current(state));
@@ -104,7 +100,6 @@ export function Workspace() {
 
   const updateTurn = (id: number, patch: Partial<Turn>) => setTurns((all) => all.map((t) => (t.id === id ? { ...t, ...patch } : t)));
 
-  // Her render'da en güncel kapanışı ref'e yaz; izleyici geri çağrısı hep güncel durumu görsün.
   useEffect(() => {
     onHealthRef.current = (state) => {
       healthRef.current = state;
@@ -234,6 +229,19 @@ export function Workspace() {
     }
   }
 
+  /** 🌟 AI Otomatik Dashboard Üretici: Tek tıkla 4 KPI & Trend grafiğini panoya dizer */
+  async function triggerAutoDashboard() {
+    const current = engine.current;
+    if (!ready || !current || generatingDashboard) return;
+    setGeneratingDashboard(true);
+    try {
+      await generateAutoDashboard(current, ready.profile);
+      setView("board");
+    } finally {
+      setGeneratingDashboard(false);
+    }
+  }
+
   function continueFrom(id: number) {
     setContextChoice({ mode: "turn", id });
     setView("answers");
@@ -241,7 +249,7 @@ export function Workspace() {
   }
 
   const header = (
-    <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-border/70 bg-panel/85 px-4 sm:px-6 py-2.5 backdrop-blur-xl transition-all">
+    <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-border/75 bg-panel/85 px-4 sm:px-6 py-2.5 backdrop-blur-2xl transition-all">
       <div className="flex items-center gap-3">
         <button
           type="button"
@@ -254,11 +262,11 @@ export function Workspace() {
         </button>
 
         {ready && (
-          <div className="flex min-w-0 items-center gap-2 rounded-xl border border-border/70 bg-card/70 px-3 py-1 text-xs shadow-sm backdrop-blur-md">
+          <div className="flex min-w-0 items-center gap-2 rounded-xl border border-border/75 bg-card/80 px-3 py-1 text-xs shadow-sm backdrop-blur-md">
             <Database className="size-3.5 text-local" />
             <span className="truncate font-semibold text-foreground max-w-[140px] sm:max-w-[200px]">{ready.profile.name}</span>
             {extraTables.length > 0 && (
-              <span className="shrink-0 rounded-md bg-local-soft px-1.5 py-0.2 font-mono text-[10px] font-medium text-local border border-local/20">
+              <span className="shrink-0 rounded-md bg-local-soft px-1.5 py-0.2 font-mono text-[10px] font-semibold text-local border border-local/20">
                 +{extraTables.length} tablo
               </span>
             )}
@@ -278,6 +286,19 @@ export function Workspace() {
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Üstte Parlayan AI Dashboard Butonu */}
+        {ready && (
+          <button
+            type="button"
+            onClick={() => void triggerAutoDashboard()}
+            disabled={generatingDashboard}
+            className="hidden sm:inline-flex items-center gap-2 rounded-xl border border-outbound/35 bg-outbound-soft/70 px-3.5 py-1.5 text-xs font-semibold text-outbound shadow-sm backdrop-blur-md transition-all hover:border-outbound hover:bg-outbound-soft hover:shadow-md active:scale-95 disabled:opacity-60 cursor-pointer"
+          >
+            {generatingDashboard ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+            <span>{generatingDashboard ? "Dashboard Hazırlanıyor…" : "✨ AI Dashboard Hazırla"}</span>
+          </button>
+        )}
+
         <PrivacyLedger rowCount={totalRows} sent={sent} onOpen={() => setPanelOpen(true)} />
         <ThemeToggle />
       </div>
@@ -299,12 +320,12 @@ export function Workspace() {
                 <button
                   type="button"
                   onClick={() => setBoardOnly(false)}
-                  className="flex items-center gap-1.5 rounded-xl border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors shadow-sm"
+                  className="flex items-center gap-1.5 rounded-xl border bg-card px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors shadow-sm cursor-pointer"
                 >
                   <ArrowLeft className="size-3.5" aria-hidden />
                   Geri Dön
                 </button>
-                <h1 className="font-heading text-2xl font-semibold">Sabitlenen Analiz Panosu</h1>
+                <h1 className="font-heading text-2xl font-bold">Sabitlenen Analiz Panosu</h1>
               </div>
               <Pinboard pins={pins} unavailable={pinsUnavailable} />
             </div>
@@ -326,7 +347,7 @@ export function Workspace() {
   const tabs: [View, string, string][] = [
     ["answers", "Sohbet & Analiz", `${turns.length}`],
     ["preview", "Veri Tablosu", `${formatInt(shownTable?.rowCount ?? ready.profile.rowCount)}`],
-    ["board", "Panom", `${pins?.length ?? 0}`],
+    ["board", "Panom (Dashboard)", `${pins?.length ?? 0}`],
   ];
 
   return (
@@ -334,31 +355,49 @@ export function Workspace() {
       {header}
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row overflow-hidden">
-        {/* Sol Sidebar (Denetim & Hızlı Öneriler Paneli) */}
-        <aside className="flex flex-col gap-5 border-b border-border/70 bg-panel/50 p-4 lg:w-[21rem] lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-b-0 backdrop-blur-sm">
+        {/* Sol Sidebar (Denetim & Hızlı Eylemler Paneli) */}
+        <aside className="flex flex-col gap-5 border-b border-border/70 bg-panel/50 p-4 lg:w-[22rem] lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-b-0 backdrop-blur-md">
           
+          {/* ✨ AI Dashboard Hazırla Butonu (Sidebar) */}
+          <button
+            type="button"
+            onClick={() => void triggerAutoDashboard()}
+            disabled={generatingDashboard}
+            className="group relative flex items-center gap-3 rounded-2xl border border-outbound/40 bg-outbound-soft/70 p-3.5 text-left transition-all hover:border-outbound hover:bg-outbound-soft hover:shadow-lg disabled:opacity-60 cursor-pointer shadow-sm"
+          >
+            <div className="grid size-9 place-items-center rounded-xl bg-outbound text-primary-foreground shadow-sm">
+              {generatingDashboard ? <Loader2 className="size-5 animate-spin" aria-hidden /> : <LayoutTemplate className="size-5" aria-hidden />}
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="font-heading text-sm font-bold text-foreground group-hover:text-outbound transition-colors">
+                {generatingDashboard ? "Oluşturuluyor…" : "✨ AI Dashboard Hazırla"}
+              </span>
+              <span className="text-[11px] text-muted-foreground">Tek tıkla 4 parçalı kurumsal özet</span>
+            </div>
+          </button>
+
           {/* Keşfet Butonu */}
           <button
             type="button"
             onClick={() => void explore()}
             disabled={exploring}
-            className="group relative flex items-center gap-3 rounded-xl border border-local/40 bg-local-soft/60 p-3 text-left transition-all hover:border-local hover:bg-local-soft/90 hover:shadow-md disabled:opacity-60 cursor-pointer"
+            className="group relative flex items-center gap-3 rounded-2xl border border-local/40 bg-local-soft/60 p-3 text-left transition-all hover:border-local hover:bg-local-soft/90 hover:shadow-md disabled:opacity-60 cursor-pointer"
           >
-            <div className="grid size-9 place-items-center rounded-lg bg-local/10 text-local">
-              {exploring ? <Loader2 className="size-5 animate-spin" aria-hidden /> : <Compass className="size-5" aria-hidden />}
+            <div className="grid size-8 place-items-center rounded-lg bg-local/15 text-local">
+              {exploring ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Compass className="size-4" aria-hidden />}
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="font-heading text-sm font-semibold text-foreground group-hover:text-local transition-colors">
+              <span className="font-heading text-xs font-semibold text-foreground group-hover:text-local transition-colors">
                 {exploring ? "Analiz Ediliyor…" : "Veriyi Otomatik Keşfet"}
               </span>
-              <span className="text-[11px] text-muted-foreground">Kural tabanlı hazır içgörüler</span>
+              <span className="text-[10px] text-muted-foreground">Kural tabanlı hazır içgörüler</span>
             </div>
           </button>
 
           {/* Hızlı Örnek Sorular */}
           <section aria-labelledby="questions-heading" className="flex flex-col gap-2.5">
             <div className="flex items-center justify-between">
-              <h2 id="questions-heading" className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase flex items-center gap-1.5">
+              <h2 id="questions-heading" className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase flex items-center gap-1.5 font-mono">
                 <Sparkles className="size-3 text-outbound" />
                 Önerilen Sorular
               </h2>
@@ -370,7 +409,7 @@ export function Workspace() {
                   type="button"
                   disabled={busy || inputLocked}
                   onClick={() => void submit(q)}
-                  className="rounded-xl border border-border/70 bg-card/60 px-3 py-2 text-left text-xs font-medium text-foreground/90 transition-all hover:border-foreground/30 hover:bg-card hover:shadow-sm hover:translate-x-0.5 disabled:opacity-50 cursor-pointer"
+                  className="rounded-xl border border-border/70 bg-card/65 px-3 py-2 text-left text-xs font-medium text-foreground/90 transition-all hover:border-foreground/30 hover:bg-card hover:shadow-xs hover:translate-x-0.5 disabled:opacity-50 cursor-pointer"
                 >
                   {q}
                 </button>
@@ -401,7 +440,7 @@ export function Workspace() {
         {/* Ana Analitik & Görselleştirme Alanı */}
         <main className="relative flex min-h-0 flex-1 flex-col p-4 sm:p-6 overflow-hidden">
           
-          {/* Üst Sekmeler */}
+          {/* Üst Sekmeler (Segmented Controls) */}
           <div className="flex items-center justify-between gap-3 pb-3 border-b border-border/50 shrink-0">
             <div role="tablist" aria-label="Görünüm" className="inline-flex rounded-xl border border-border/70 bg-panel/80 p-1 text-xs shadow-inner backdrop-blur-md">
               {tabs.map(([key, label, badge]) => (
@@ -414,7 +453,7 @@ export function Workspace() {
                   className={cn(
                     "flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-medium whitespace-nowrap transition-all duration-200 cursor-pointer",
                     view === key
-                      ? "bg-card text-foreground shadow-sm font-semibold"
+                      ? "bg-card text-foreground shadow-xs font-semibold"
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
@@ -422,7 +461,7 @@ export function Workspace() {
                   {badge && badge !== "0" && (
                     <span className={cn(
                       "rounded-full px-1.5 py-0.2 font-mono text-[10px]",
-                      view === key ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+                      view === key ? "bg-primary/10 text-primary font-bold" : "bg-muted text-muted-foreground"
                     )}>
                       {badge}
                     </span>
@@ -442,7 +481,7 @@ export function Workspace() {
           <div className="min-h-0 flex-1 overflow-y-auto py-4 pr-1">
             
             {view === "preview" && (
-              <div className="h-full rounded-2xl border border-border/70 bg-card/50 backdrop-blur-sm overflow-hidden p-1 shadow-sm">
+              <div className="h-full rounded-2xl border border-border/70 bg-card/60 backdrop-blur-sm overflow-hidden p-1 shadow-sm">
                 <PreviewTable
                   key={shownTable?.table}
                   result={ready.previews[shownTable?.table ?? PRIMARY_TABLE] ?? ready.preview}
@@ -466,20 +505,22 @@ export function Workspace() {
                       <Sparkles className="size-6" aria-hidden />
                     </div>
                     <div className="flex flex-col gap-1">
-                      <p className="font-heading text-lg font-semibold text-foreground">Analize başlamaya hazır mısın?</p>
+                      <p className="font-heading text-lg font-bold text-foreground">Analize Başlamaya Hazır Mısın?</p>
                       <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
-                        Aşağıdaki komut çubuğuna Türkçe bir soru yazabilir veya soldaki önerilen sorulardan birine tıklayabilirsin.
+                        Aşağıdaki komut çubuğuna Türkçe bir soru yazabilir veya tek tıkla otomatik dashboard oluşturabilirsiniz.
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => void explore()}
-                      disabled={exploring}
-                      className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-medium text-primary-foreground shadow-md transition-all hover:scale-[1.02] hover:opacity-90 active:scale-95 disabled:opacity-60 cursor-pointer"
-                    >
-                      {exploring ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Compass className="size-3.5" aria-hidden />}
-                      {exploring ? "İçgörüler Çıkarılıyor…" : "Veriyi Otomatik Keşfet"}
-                    </button>
+                    <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => void triggerAutoDashboard()}
+                        disabled={generatingDashboard}
+                        className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-md transition-all hover:scale-105 active:scale-95 disabled:opacity-60 cursor-pointer"
+                      >
+                        {generatingDashboard ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <LayoutTemplate className="size-3.5" aria-hidden />}
+                        <span>✨ AI Dashboard Oluştur</span>
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
@@ -508,7 +549,7 @@ export function Workspace() {
             <div role="status" className="mb-2 flex items-center gap-3 rounded-xl border border-outbound/30 bg-outbound-soft/60 px-4 py-2.5 text-xs text-muted-foreground backdrop-blur-md animate-in fade-in">
               <Loader2 className="size-4 shrink-0 animate-spin text-outbound" aria-hidden />
               <span>
-                <strong className="text-foreground font-medium">Yanıt motoru hazırlanıyor…</strong> Ücretsiz sunucu boştayken uyku moduna geçiyor; sorunuz kuyruğa alındı ve motor uyanınca otomatik çalıştırılacak.
+                <strong className="text-foreground font-semibold">Yanıt motoru hazırlanıyor…</strong> Sunucu uyanınca sorunuz otomatik işlenecek.
               </span>
             </div>
           )}
@@ -527,7 +568,7 @@ export function Workspace() {
             </div>
           )}
 
-          {/* Floating Command Bar (Yüzen Soru & Sohbet Giriş Çubuğu) */}
+          {/* Floating Command Bar */}
           <div className="absolute bottom-4 left-4 right-4 sm:left-6 sm:right-6 max-w-4xl mx-auto z-20">
             <form
               onSubmit={(e) => {

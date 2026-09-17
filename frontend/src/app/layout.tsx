@@ -1,35 +1,34 @@
 import type { Metadata } from "next";
-import { Bricolage_Grotesque, IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import { JetBrains_Mono, Plus_Jakarta_Sans, Space_Grotesk } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
-const display = Bricolage_Grotesque({
+const display = Space_Grotesk({
   variable: "--font-display",
   subsets: ["latin", "latin-ext"],
-  weight: ["500", "700"],
+  weight: ["500", "600", "700"],
 });
 
-const sans = IBM_Plex_Sans({
+const sans = Plus_Jakarta_Sans({
   variable: "--font-body",
+  subsets: ["latin", "latin-ext"],
+  weight: ["400", "500", "600", "700"],
+});
+
+const mono = JetBrains_Mono({
+  variable: "--font-data",
   subsets: ["latin", "latin-ext"],
   weight: ["400", "500", "600"],
 });
 
-const mono = IBM_Plex_Mono({
-  variable: "--font-data",
-  subsets: ["latin", "latin-ext"],
-  weight: ["400", "500"],
-});
-
 export const metadata: Metadata = {
-  title: "InsightFlow — verine sor",
-  description: "Verini tarayıcına bırak, doğal dille sor. Dosyan cihazından çıkmaz; yapay zekâya yalnızca şema gider.",
+  title: "InsightFlow — Yeni Nesil Veri Analitiği",
+  description: "Verini tarayıcına bırak, doğal dille sor. DuckDB ile yerel OLAP hızında çalışır; dosyan cihazından çıkmaz.",
 };
 
-// Tema, boyamadan önce uygulanır (kayıtlı tercih yoksa sistem ayarı).
 const themeScript = `(function(){try{var t=localStorage.getItem("theme");if(!t)t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";if(t==="dark")document.documentElement.classList.add("dark")}catch(e){}})()`;
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="tr"
@@ -39,7 +38,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body className="h-full">
+      <body className="h-full bg-background text-foreground font-sans">
         <TooltipProvider>{children}</TooltipProvider>
       </body>
     </html>

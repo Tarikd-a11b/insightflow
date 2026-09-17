@@ -4,13 +4,12 @@ import { humanize, type ChartSpec } from "./chart-spec";
 export type PlotSpec = Exclude<ChartSpec, { kind: "kpi" } | { kind: "table" }>;
 
 /*
- * Kategorik palet: dataviz referans paletinin ilk 4 slotu, bu sırayla (sıra CVD güvenliğinin parçası).
- * validate_palette.js ile uygulamanın kart yüzeylerinde doğrulandı: açık #ffffff, koyu #161c23 (adjacent + all-pairs ilk 3).
- * Açıkta aqua ve sarı 3:1 altında kaldığı için her grafikte tablo görünümü ve eksen/araç ipucu etiketleri var.
+ * Modern Canlı & Yüksek Kontrastlı Dataviz Paleti:
+ * FinTech & Modern AI standardı (Cyber Indigo, Cyan, Emerald, Amber, Electric Coral, Violet, Azure)
  */
 export const PALETTE = {
-  light: ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"],
-  dark: ["#3987e5", "#d95926", "#199e70", "#c98500"],
+  light: ["#4f46e5", "#06b6d4", "#10b981", "#f59e0b", "#ec4899", "#8b5cf6", "#2563eb"],
+  dark: ["#818cf8", "#22d3ee", "#34d399", "#fbbf24", "#f472b6", "#a78bfa", "#60a5fa"],
 };
 
 /** Grafiğin ekrandan ya da rapordan bağımsız çizilebilmesi için gereken tüm görsel değerler. */
@@ -23,15 +22,14 @@ export interface ChartTheme {
   palette: string[];
   dataFont: string;
   bodyFont: string;
-  /** Rapor gibi statik çıktılarda animasyon ve etkileşim kapatılır. */
   interactive: boolean;
 }
 
 /** PDF rapor teması: ekran temasından bağımsız, her zaman açık zemin. */
 export const PRINT_THEME: ChartTheme = {
-  ink: "#111820",
-  muted: "#56616d",
-  grid: "#d6dce2",
+  ink: "#0f172a",
+  muted: "#64748b",
+  grid: "#e2e8f0",
   surface: "#ffffff",
   popover: "#ffffff",
   palette: PALETTE.light,
@@ -57,7 +55,6 @@ export function formatKpi(value: number, percent: boolean): string {
   return formatValue(value, percent, Math.abs(value) >= 1_000_000);
 }
 
-/** Araç ipucu HTML olarak çizilir; hücre değerleri yüklenen dosyadan geldiği için kaçırılmalı. */
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 }
@@ -67,7 +64,7 @@ function isMonthly(dates: string[]): boolean {
 }
 
 export function chartHeight(spec: PlotSpec): number {
-  return spec.kind === "bar" ? Math.max(160, spec.categories.length * (spec.series.length > 1 ? 34 : 28) + 48) : 280;
+  return spec.kind === "bar" ? Math.max(180, spec.categories.length * (spec.series.length > 1 ? 36 : 30) + 52) : 290;
 }
 
 export function buildOption(spec: PlotSpec, t: ChartTheme): EChartsCoreOption {
@@ -78,68 +75,87 @@ export function buildOption(spec: PlotSpec, t: ChartTheme): EChartsCoreOption {
     axisLine: { lineStyle: { color: grid } },
     axisTick: { show: false },
     axisLabel: { color: muted, fontSize: 11, fontFamily: t.dataFont },
-    splitLine: { lineStyle: { color: grid, width: 1, type: "solid" as const } },
+    splitLine: { lineStyle: { color: grid, width: 1, type: "dashed" as const } },
   };
   const tooltipBase = {
     show: t.interactive,
     backgroundColor: t.popover,
     borderColor: grid,
-    textStyle: { color: ink, fontSize: 12 },
-    extraCssText: "box-shadow: 0 4px 16px rgb(0 0 0 / 0.12); border-radius: 6px;",
+    borderWidth: 1,
+    padding: [8, 12],
+    textStyle: { color: ink, fontSize: 12, fontFamily: t.bodyFont },
+    extraCssText: "box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2); border-radius: 10px; backdrop-filter: blur(8px);",
   };
   const base = {
     color: t.palette,
     animation: t.interactive,
-    animationDuration: 400,
+    animationDuration: 600,
     aria: { enabled: t.interactive },
     textStyle: { fontFamily: t.bodyFont },
     legend: multi
-      ? { top: 0, left: 0, icon: "roundRect", itemWidth: 10, itemHeight: 10, textStyle: { color: muted, fontSize: 12, fontFamily: t.bodyFont } }
+      ? { top: 0, left: 0, icon: "roundRect", itemWidth: 12, itemHeight: 10, textStyle: { color: muted, fontSize: 12, fontFamily: t.bodyFont } }
       : { show: false },
   };
   const swatch = (color: string) =>
-    `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${color};margin-right:6px"></span>`;
+    `<span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${color};margin-right:6px"></span>`;
 
   if (spec.kind === "line") {
     const dates = (spec.series[0]?.data as [string, number | null][]).map(([d]) => d);
     const monthly = isMonthly(dates);
     const dateLabel = (ms: number) => (monthly ? monthFmt : dayFmt).format(new Date(ms));
+    
     return {
       ...base,
-      grid: { top: multi ? 36 : 12, right: 16, bottom: 28, left: 8, containLabel: true },
+      grid: { top: multi ? 36 : 14, right: 16, bottom: 28, left: 8, containLabel: true },
       tooltip: {
         ...tooltipBase,
         trigger: "axis",
-        axisPointer: { type: "line", lineStyle: { color: muted, width: 1 } },
+        axisPointer: { type: "line", lineStyle: { color: t.palette[0], width: 1.5, type: "dashed" } },
         formatter: (params: { axisValue: number; color: string; seriesName: string; value: [string, number] }[]) =>
-          `<div style="margin-bottom:4px;color:${muted}">${dateLabel(Number(params[0]?.axisValue))}</div>` +
+          `<div style="margin-bottom:6px;font-weight:600;color:${muted}">${dateLabel(Number(params[0]?.axisValue))}</div>` +
           params
-            .map((p) => `<div>${swatch(p.color)}${multi ? `${esc(p.seriesName)}: ` : ""}<b>${formatValue(p.value[1], spec.percent)}</b></div>`)
+            .map((p) => `<div style="display:flex;align-items:center;margin:3px 0;">${swatch(p.color)}${multi ? `${esc(p.seriesName)}: ` : ""}<b style="margin-left:auto;padding-left:12px">${formatValue(p.value[1], spec.percent)}</b></div>`)
             .join(""),
       },
       xAxis: { type: "time", ...axisCommon, splitLine: { show: false }, axisLabel: { ...axisCommon.axisLabel, formatter: (v: number) => dateLabel(v), hideOverlap: true } },
       yAxis: { type: "value", ...axisCommon, axisLine: { show: false }, axisLabel: { ...axisCommon.axisLabel, formatter: (v: number) => formatValue(v, spec.percent, true) } },
-      series: spec.series.map((s) => ({
-        name: s.name,
-        type: "line",
-        data: (s.data as [string, number | null][]).map(([d, v]) => [`${d.slice(0, 10)}T00:00:00Z`, v]),
-        showSymbol: false,
-        symbolSize: 8,
-        lineStyle: { width: 2, cap: "round", join: "round" },
-        itemStyle: { borderColor: surface, borderWidth: 2 },
-        emphasis: { focus: multi ? "series" : "none", scale: false },
-        areaStyle: multi ? undefined : { opacity: 0.1 },
-      })),
+      series: spec.series.map((s, idx) => {
+        const color = t.palette[idx % t.palette.length];
+        return {
+          name: s.name,
+          type: "line",
+          data: (s.data as [string, number | null][]).map(([d, v]) => [`${d.slice(0, 10)}T00:00:00Z`, v]),
+          showSymbol: false,
+          smooth: 0.25,
+          symbolSize: 8,
+          lineStyle: { width: 2.8, color },
+          itemStyle: { borderColor: surface, borderWidth: 2, color },
+          emphasis: { focus: multi ? "series" : "none", scale: true },
+          areaStyle: multi ? undefined : {
+            opacity: 0.25,
+            color: {
+              type: "linear",
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [
+                { offset: 0, color },
+                { offset: 1, color: "rgba(0,0,0,0)" },
+              ],
+            },
+          },
+        };
+      }),
     };
   }
 
   if (spec.kind === "bar") {
-    // Uzun Türkçe kategori adları için yatay çubuk; kategoriler SQL'in sırasıyla yukarıdan aşağı.
     const labelRoom = Math.min(160, Math.max(...spec.categories.map((c) => c.length)) * 7 + 8);
     const labelTips = !multi && spec.categories.length <= 12;
     return {
       ...base,
-      grid: { top: multi ? 36 : 4, right: labelTips ? 64 : 16, bottom: 20, left: 8, containLabel: true },
+      grid: { top: multi ? 36 : 6, right: labelTips ? 64 : 16, bottom: 20, left: 8, containLabel: true },
       tooltip: {
         ...tooltipBase,
         trigger: "item",
@@ -158,10 +174,17 @@ export function buildOption(spec: PlotSpec, t: ChartTheme): EChartsCoreOption {
       series: spec.series.map((s) => ({
         name: s.name,
         type: "bar",
-        data: s.data,
-        barMaxWidth: 24,
-        barGap: "8%",
-        itemStyle: { borderRadius: [0, 4, 4, 0] },
+        data: (s.data as number[]).map((val, catIdx) => ({
+          value: val,
+          itemStyle: multi
+            ? { borderRadius: [0, 6, 6, 0] }
+            : {
+                borderRadius: [0, 6, 6, 0],
+                color: t.palette[catIdx % t.palette.length],
+              },
+        })),
+        barMaxWidth: 26,
+        barGap: "10%",
         label: labelTips
           ? { show: true, position: "right", color: muted, fontSize: 11, fontFamily: t.dataFont, formatter: (p: { value: number }) => formatValue(p.value, spec.percent, true) }
           : { show: false },
@@ -172,7 +195,7 @@ export function buildOption(spec: PlotSpec, t: ChartTheme): EChartsCoreOption {
 
   return {
     ...base,
-    grid: { top: 12, right: 16, bottom: 36, left: 8, containLabel: true },
+    grid: { top: 14, right: 16, bottom: 36, left: 8, containLabel: true },
     tooltip: {
       ...tooltipBase,
       trigger: "item",
@@ -181,13 +204,20 @@ export function buildOption(spec: PlotSpec, t: ChartTheme): EChartsCoreOption {
     },
     xAxis: { type: "value", name: humanize(spec.x), nameLocation: "middle", nameGap: 26, nameTextStyle: { color: muted, fontSize: 11, fontFamily: t.bodyFont }, scale: true, ...axisCommon },
     yAxis: { type: "value", name: humanize(spec.y), nameTextStyle: { color: muted, fontSize: 11, align: "left", fontFamily: t.bodyFont }, scale: true, ...axisCommon, axisLine: { show: false } },
-    series: spec.series.map((s) => ({
+    series: spec.series.map((s, idx) => ({
       name: s.name,
       type: "scatter",
       data: s.data,
-      symbolSize: t.interactive ? 8 : 5,
-      itemStyle: { opacity: 0.7, borderColor: surface, borderWidth: 1 },
-      emphasis: { scale: 1.4, itemStyle: { opacity: 1 } },
+      symbolSize: t.interactive ? 10 : 6,
+      itemStyle: {
+        color: t.palette[idx % t.palette.length],
+        opacity: 0.85,
+        borderColor: surface,
+        borderWidth: 1.5,
+        shadowBlur: 6,
+        shadowColor: t.palette[idx % t.palette.length],
+      },
+      emphasis: { scale: 1.5, itemStyle: { opacity: 1 } },
     })),
   };
 }
