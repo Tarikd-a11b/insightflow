@@ -11,6 +11,8 @@ export interface Pin {
   createdAt: number;
   datasetName: string;
   question: string;
+  /** Sonuçtan tarayıcıda kurulan cevap cümlesi (eski kayıtlarda yok). */
+  answer?: string;
   explanation: string;
   sql: string;
   chart: ChartKind;

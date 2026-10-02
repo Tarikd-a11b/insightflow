@@ -49,6 +49,9 @@ test.describe("soru → güvenli SQL → tarayıcıda sonuç", () => {
     const card = await ask(page, "Şehir bazında ciro?");
     await expect(card.locator("[data-chart] svg")).toBeVisible();
     await expect(card).toContainText("8 Satır");
+    // Cevap cümlesi sonuçtan tarayıcıda kurulur; model açıklaması "Nasıl hesaplandı" olarak altta kalır.
+    await expect(card.locator("[data-answer]")).toContainText("En yüksek ciro: İstanbul (21,5 Mn, toplamın %43,1 kadarı).");
+    await expect(card).toContainText("Nasıl hesaplandı: Test sorgusu.");
 
     const [body] = api.bodies("/sql");
     expect(Object.keys(body).sort()).toEqual(["columns", "question"]);

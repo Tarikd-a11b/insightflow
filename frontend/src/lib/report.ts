@@ -25,6 +25,8 @@ export interface ReportItem {
   question: string;
   datasetName: string;
   createdAt: number;
+  /** Sonuçtan kurulan cevap cümlesi. */
+  answer?: string;
   explanation: string;
   sql: string;
   chart: ChartKind;
@@ -255,7 +257,8 @@ export async function buildReport(items: ReportItem[], options: ReportOptions = 
     }
     text(doc, cur, `ANALİZ ${index + 1} · ${item.datasetName.toLocaleUpperCase("tr-TR")} · ${dateTimeFmt.format(item.createdAt)}`, { size: 7, color: MUTED, gap: 1.5 });
     text(doc, cur, item.question, { size: 14, bold: true, gap: 1.5 });
-    if (item.explanation) text(doc, cur, item.explanation, { size: 9.5, color: MUTED, gap: 4 });
+    if (item.answer) text(doc, cur, item.answer, { size: 10.5, gap: 2 });
+    if (item.explanation) text(doc, cur, item.answer ? `Nasıl hesaplandı: ${item.explanation}` : item.explanation, { size: 9.5, color: MUTED, gap: 4 });
 
     if (item.result.rows.length === 0) {
       text(doc, cur, "Sorgu çalıştı ama koşula uyan kayıt yok.", { size: 9.5, color: MUTED, gap: 4 });

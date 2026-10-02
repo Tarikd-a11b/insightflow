@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, BarChart3, Check, ChevronRight, Compass, Copy, CornerDownRight, Microscope, Database, FileDown, FileSpreadsheet, Image as ImageIcon, Info, LineChart, Loader2, PieChart, Pin, PinOff, SearchX, ShieldCheck, Sparkles, Table2, Terminal, TrendingDown, TrendingUp, Wrench, Zap } from "lucide-react";
+import { AlertTriangle, BarChart3, Check, ChevronRight, Compass, Copy, CornerDownRight, Lightbulb, Microscope, Database, FileDown, FileSpreadsheet, Image as ImageIcon, Info, LineChart, Loader2, PieChart, Pin, PinOff, SearchX, ShieldCheck, Sparkles, Table2, Terminal, TrendingDown, TrendingUp, Wrench, Zap } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { ApiError, requestSummary, summaryPayload, type ChartKind } from "@/lib/api";
 import type { AskOutcome, AskStep } from "@/lib/ask";
@@ -10,6 +10,7 @@ import { formatInt } from "@/lib/format";
 import { pinStore } from "@/lib/pins";
 import type { ReportItem } from "@/lib/report";
 import { cn } from "@/lib/utils";
+import { describeResult } from "@/lib/answer-text";
 import { whyTarget } from "@/lib/why";
 import { ResultView } from "./result-view";
 import { WhyPanel, type WhyContext } from "./why-panel";
@@ -119,7 +120,7 @@ export function AnswerCard({
       )}
 
       {outcome?.kind === "answer" && (
-        <AnswerBody question={turn.question} answer={outcome} datasetName={datasetName} tableNames={tableNames} why={why} onContinue={() => onContinue(turn.id)} />
+        <AnswerBody question={turn.question} answer={outcome} datasetName={datasetName} tableNames={tableNames} why={why} fromExplore={turn.origin === "explore"} onContinue={() => onContinue(turn.id)} />
       )}
     </article>
   );
@@ -141,8 +142,11 @@ function AnswerBody({
   onContinue,
   tableNames,
   why,
+  fromExplore = false,
 }: {
   question: string;
+  /** Keşif kartının açıklaması zaten bulgu cümlesi; ikinci bir cevap cümlesi eklenmez. */
+  fromExplore?: boolean;
   answer: Answer;
   datasetName: string;
   onContinue: () => void;
@@ -164,6 +168,10 @@ function AnswerBody({
   const target = useMemo(() => (why ? whyTarget(answer.result) : null), [why, answer.result]);
   const resultRef = useRef<HTMLDivElement>(null);
   const empty = answer.result.rows.length === 0;
+  const answerText = useMemo(
+    () => (fromExplore ? null : describeResult(answer.result, answer.limited && answer.result.rows.length >= 1000)),
+    [fromExplore, answer.result, answer.limited],
+  );
 
   function onSummary(text: string) {
     setSummary(text);
@@ -172,7 +180,19 @@ function AnswerBody({
 
   return (
     <>
-      <p className="text-sm leading-relaxed text-foreground/90">{answer.explanation}</p>
+      {answerText && (
+        <p data-answer className="flex items-start gap-2 rounded-xl border border-local/30 bg-local/5 px-3 py-2.5 text-[15px] leading-relaxed font-medium text-foreground">
+          <Lightbulb className="mt-1 size-4 shrink-0 text-local" aria-hidden />
+          <span>{answerText}</span>
+        </p>
+      )}
+      {answerText ? (
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          <span className="font-medium">Nasıl hesaplandı:</span> {answer.explanation}
+        </p>
+      ) : (
+        <p className="text-sm leading-relaxed text-foreground/90">{answer.explanation}</p>
+      )}
 
       {empty ? (
         <p className="text-sm text-muted-foreground">Sorgu çalıştı ama koşula uyan kayıt yok. Filtreyi genişletmeyi deneyin.</p>
@@ -213,7 +233,7 @@ function AnswerBody({
             </div>
 
             <div className="flex flex-wrap items-center gap-1.5">
-              <PinButton question={question} answer={{ ...answer, chart: selectedChart }} datasetName={datasetName} pinId={pinId} onPinChange={setPinId} summary={summary} />
+              <PinButton question={question} answer={{ ...answer, chart: selectedChart }} answerText={answerText ?? undefined} datasetName={datasetName} pinId={pinId} onPinChange={setPinId} summary={summary} />
               <button
                 type="button"
                 onClick={onContinue}
@@ -237,7 +257,7 @@ function AnswerBody({
                   Neden Değişti?
                 </button>
               )}
-              <PdfButton item={{ question, datasetName, explanation: answer.explanation, sql: answer.sql, chart: selectedChart, result: answer.result, summary }} />
+              <PdfButton item={{ question, datasetName, answer: answerText ?? undefined, explanation: answer.explanation, sql: answer.sql, chart: selectedChart, result: answer.result, summary }} />
               <CsvButton result={answer.result} question={question} />
               {selectedChart !== "table" && selectedChart !== "kpi" && (
                 <PngButton containerRef={resultRef} question={question} />
@@ -294,9 +314,11 @@ function PinButton({
   pinId,
   onPinChange: setPinId,
   summary,
+  answerText,
 }: {
   question: string;
   answer: Answer;
+  answerText?: string;
   datasetName: string;
   pinId: string | null;
   onPinChange: (id: string | null) => void;
@@ -314,6 +336,7 @@ function PinButton({
         const pin = await pinStore.add({
           datasetName,
           question,
+          answer: answerText,
           explanation: answer.explanation,
           sql: answer.sql,
           chart: answer.chart,

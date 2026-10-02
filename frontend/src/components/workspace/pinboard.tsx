@@ -175,6 +175,8 @@ export function Pinboard({ pins, unavailable }: { pins: Pin[] | null; unavailabl
               </button>
             </div>
 
+            {pin.answer && <p className="text-sm leading-relaxed font-medium text-foreground">{pin.answer}</p>}
+
             <ResultView result={pin.result} chart={pin.chart} chartHeight={pin.chart === "bar" ? undefined : layout === "stack" ? 280 : 230} tableClassName="max-h-64" />
 
             {pin.summary && (
