@@ -15,6 +15,7 @@ import { watchHealth, type HealthState } from "@/lib/health-watch";
 import { outboundLog, totals } from "@/lib/outbound-log";
 import { cn } from "@/lib/utils";
 import { AnswerCard, type Turn } from "./answer-card";
+import type { WhyContext } from "./why-panel";
 import { DatasetPicker } from "./dataset-picker";
 import { useOutboundLog, usePins } from "./hooks";
 import { OutboundPanel } from "./outbound-panel";
@@ -69,6 +70,21 @@ export function Workspace() {
   const log = useOutboundLog();
   const sent = useMemo(() => totals(log), [log]);
   const { pins, unavailable: pinsUnavailable } = usePins();
+  // "Neden değişti?" analizi motoru çağrı anında okur: dosya eklenince motor yenilenir.
+  const why = useMemo<WhyContext | undefined>(
+    () =>
+      ready
+        ? {
+            tables: ready.tables,
+            runner: {
+              query: (sql) => requireEngine(engine.current).query(sql),
+              parseSql: (sql) => requireEngine(engine.current).parseSql(sql),
+              renderSql: (ast) => requireEngine(engine.current).renderSql(ast),
+            },
+          }
+        : undefined,
+    [ready, engine],
+  );
   const extraTables = useMemo(() => (ready ? ready.tables.filter((t) => t.table !== PRIMARY_TABLE) : []), [ready]);
   const suggestions = useMemo(() => {
     if (!ready) return [];
@@ -531,6 +547,7 @@ export function Workspace() {
                         turn={t}
                         datasetName={datasetLabel}
                         tableNames={extraTables.map((t) => t.table)}
+                        why={why}
                         onStop={stop}
                         onContinue={continueFrom}
                         isContext={t.id === contextId}
@@ -689,4 +706,9 @@ export function Workspace() {
       />
     </div>
   );
+}
+
+function requireEngine<T>(engine: T | null): T {
+  if (!engine) throw new Error("Veri motoru hazır değil.");
+  return engine;
 }

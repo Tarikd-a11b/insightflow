@@ -389,3 +389,51 @@ test.describe("şeffaflık, özet ve pano", () => {
     await expect(page.locator("article").last()).toContainText("Soru durduruldu.");
   });
 });
+
+test.describe("neden değişti? (tarayıcıda katkı analizi)", () => {
+  const MONTHLY = "SELECT date_trunc('month', siparis_tarihi) AS ay, SUM(toplam_tutar) AS ciro FROM data WHERE iade_edildi = false GROUP BY 1 ORDER BY 1";
+
+  test("iki dönem arasındaki düşüşü kategorilere böler, toplamları doğrular ve modele istek atmaz", async ({ page }) => {
+    const api = await mockApi(page);
+    await openDemo(page);
+    api.queue("/sql", sqlOk(MONTHLY, "line"));
+    const card = await ask(page, "Aylık ciro nasıl gidiyor?");
+    await expect(card.locator("[data-chart] svg")).toBeVisible();
+
+    const apiCalls: string[] = [];
+    page.on("request", (req) => /\/api\//.test(req.url()) && apiCalls.push(req.url()));
+    await card.getByRole("button", { name: "Neden Değişti?" }).click();
+    const panel = card.getByRole("region", { name: "Neden değişti analizi" });
+
+    // Varsayılan: son iki ay. Beklenen değerler aynı veri üzerinde Python DuckDB ile ayrıca hesaplandı.
+    await expect(panel).toContainText("Ciro, Kasım 2025 → Aralık 2025 arasında 2,8 Mn → 2 Mn (-%29,2).", { timeout: 20_000 });
+    await expect(panel).toContainText("toplamlar orijinal sonuçla doğrulandı");
+    await panel.getByRole("tab", { name: "Kategori" }).click();
+    const bars = panel.getByRole("list", { name: "Kategori kırılımında katkılar" }).getByRole("listitem");
+    await expect(bars.first()).toContainText("Elektronik");
+    await expect(bars.first()).toContainText("değişimin %63");
+    expect(apiCalls).toHaveLength(0);
+
+    // Dönem değiştirilince analiz yeniden hesaplanır.
+    await panel.getByLabel("Başlangıç dönemi").selectOption("2025-10-01");
+    await expect(panel).toContainText("Ekim 2025 → Aralık 2025");
+  });
+
+  test("ortalama gibi toplanamayan ölçüde kırılım yapmaz, nedenini söyler", async ({ page }) => {
+    const api = await mockApi(page);
+    await openDemo(page);
+    api.queue("/sql", sqlOk("SELECT date_trunc('month', siparis_tarihi) AS ay, AVG(toplam_tutar) AS ortalama_sepet FROM data GROUP BY 1 ORDER BY 1", "line"));
+    const card = await ask(page, "Aylık ortalama sepet?");
+    await card.getByRole("button", { name: "Neden Değişti?" }).click();
+    await expect(card.getByRole("region", { name: "Neden değişti analizi" })).toContainText("toplanabilir bir ölçü değil");
+  });
+
+  test("zaman serisi olmayan yanıtta düğme görünmez", async ({ page }) => {
+    const api = await mockApi(page);
+    await openDemo(page);
+    api.queue("/sql", sqlOk("SELECT sehir, SUM(toplam_tutar) AS ciro FROM data GROUP BY 1 ORDER BY 2 DESC", "bar"));
+    const card = await ask(page, "Şehir bazında ciro?");
+    await expect(card.locator("[data-chart] svg")).toBeVisible();
+    await expect(card.getByRole("button", { name: "Neden Değişti?" })).toHaveCount(0);
+  });
+});

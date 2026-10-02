@@ -79,6 +79,8 @@ function tableToResult(table: Table, ms: number): QueryResult {
   return { columns: fields.map((f) => f.name), rows, ms };
 }
 
+const sqlString = (text: string) => `'${text.replace(/'/g, "''")}'`;
+
 export class DataEngine {
   private constructor(
     private db: duckdb.AsyncDuckDB,
@@ -122,6 +124,10 @@ export class DataEngine {
       await this.conn.query(`CREATE TABLE ${quoteIdent(input.table)} AS SELECT * FROM ${source.reader}('${source.name}'${options})`);
       await this.db.dropFile(source.name);
     }
+
+    // "Neden değişti?" analizi sorguları DuckDB'nin ayrıştırıcısıyla çözümler (json_serialize_sql); eklenti kilitten önce
+    // yüklenmeli, sonra dış erişim kapanır. Yüklenemezse yalnızca o analiz devre dışı kalır.
+    await this.conn.query("LOAD json").catch(() => {});
 
     // Veri içeride; bundan sonra hiçbir sorgu dosya veya ağa erişemez ve bu ayar geri açılamaz.
     await this.conn.query("SET enable_external_access = false");
@@ -185,6 +191,21 @@ export class DataEngine {
     const started = performance.now();
     const table = await this.conn.query(sql);
     return tableToResult(table, Math.round(performance.now() - started));
+  }
+
+  /** SQL'i DuckDB'nin kendi ayrıştırıcısıyla JSON sözdizimi ağacına çevirir (çalıştırmaz). */
+  async parseSql(sql: string): Promise<unknown> {
+    const res = await this.conn.query(`SELECT json_serialize_sql(${sqlString(sql)})::VARCHAR AS ast`);
+    return JSON.parse(String(res.toArray()[0].ast));
+  }
+
+  /** `parseSql` ağacını (değiştirilmiş olabilir) yeniden SQL metnine çevirir. */
+  async renderSql(ast: unknown): Promise<string> {
+    // query_location yalnızca hata mesajı konumu; "konum yok" değeri 2^64-1 olduğundan JSON.parse'ta yuvarlanır ve
+    // DuckDB geri okurken reddeder. Anlamı olmadığı için 0 yazılır.
+    const json = JSON.stringify(ast, (key, value) => (key === "query_location" ? 0 : value));
+    const res = await this.conn.query(`SELECT json_deserialize_sql(${sqlString(json)}::JSON) AS sql`);
+    return String(res.toArray()[0].sql);
   }
 
   async dispose(): Promise<void> {

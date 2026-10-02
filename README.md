@@ -100,6 +100,15 @@ Ayrıntılar ve yöntem: [`docs/benchmark/README.md`](docs/benchmark/README.md).
 - İçgörü kartları panoya sabitlenebilir, PDF'e girer; **Buna devam et** ile içgörünün SQL'i takip sorusunun bağlamı olur. Keşif sonrası soru kutusu kendiliğinden bir içgörüye bağlanmaz.
 - Üç demo veri setinde yaklaşık 1 sn.
 
+## Neden değişti?
+
+- Zaman serisi yanıtlarında **Neden Değişti?** butonu (`src/lib/why.ts`), seçilen iki dönem arasındaki farkı kategorilere böler (katkı analizi). **Model çağrısı yapmaz**, her şey tarayıcıdaki kilitli motorda koşar.
+- Yanıtın SQL'i DuckDB'nin kendi ayrıştırıcısıyla (`json_serialize_sql`) ağaca çevrilir. Aynı sorgu, aynı FROM/JOIN ve WHERE ile, bu kez her kategorik sütuna göre de gruplanarak yeniden kurulur (`json_deserialize_sql`). Regex ile SQL kurcalanmaz.
+- Yalnızca toplanabilir ölçülerde çalışır (`SUM`, `COUNT`, `ROUND(SUM(...))`). Ortalama, oran ya da benzersiz sayımın değişimi kategorilere paylaştırılamayacağı için analiz yapılmaz ve nedeni yazılır. CTE, alt sorgu, UNION, HAVING ve DISTINCT de aynı şekilde gerekçeyle reddedilir.
+- Her kırılımın toplamı orijinal sonuçla karşılaştırılır; tutmazsa yanlış bir hikâye anlatmak yerine analiz gösterilmez.
+- Çıktı: değişimin en büyük kaynağı, ikinci etken, ters yönde hareket eden değer ve her kırılım için artış/düşüş çubukları. Değişim tek bir değerde yoğunlaşmıyorsa bunu söyler.
+- Örnek (e-ticaret demosu, iadeler hariç ciro): Kasım → Aralık 2025'te 2,8 Mn → 2 Mn (−%29,2). Düşüşün %66 kadarı "Yeni" müşteri segmentinden. Değerler Python DuckDB ile ayrıca hesaplanarak doğrulandı.
+
 ## Takip soruları
 
 - Son yanıt varsayılan olarak bağlamdır; soru kutusunun üstündeki "Önceki soruyla bağlantılı" etiketi × ile kaldırılabilir, herhangi bir karttaki **Buna devam et** bağlamı o karta çevirir.
@@ -123,8 +132,8 @@ Ayrıntılar ve yöntem: [`docs/benchmark/README.md`](docs/benchmark/README.md).
 | Katman | Komut | Kapsam |
 | --- | --- | --- |
 | Backend | `uv run pytest` | 130 test: doğrulayıcı saldırı korpusu, ek tablolarla JOIN ve izin listesi, API ve tablo/ilişki doğrulaması, özet toplulaştırma kuralı (JOIN/UNION dahil), örnek değer ve takip geçmişi sınırları, hata temizleme, istek sınırı |
-| Frontend birim | `npm test` | 72 test: grafik seçici, profil, öneri soruları, tablo adı ve ilişki adayları, keşif cümleleri ve plan seçimi, örnek değer adayları, takip bağlamı zinciri, onarım döngüsü, giden istek kaydı, pano deposu (özet güncelleme dahil), backend uyanma izleyicisi |
-| Uçtan uca | `npm run test:e2e` | 17 senaryo, gerçek Chromium + gerçek DuckDB-WASM (backend taklit edilir): dış istek yok, API aynı alan adından, veri sızıntısı yok, iki tablolu JOIN ve dosya ekleme/çıkarma, model çağrısız keşif, takip soruları, onaylı örnek değerler, motor kilidi, onarım, özet onayı, pano kalıcılığı, PDF rapor indirme, durdurma, uyuyan sunucu, mobil |
+| Frontend birim | `npm test` | 97 test: grafik seçici, profil, öneri soruları, tablo adı ve ilişki adayları, keşif cümleleri ve plan seçimi, örnek değer adayları, takip bağlamı zinciri, onarım döngüsü, giden istek kaydı, pano deposu (özet güncelleme dahil), backend uyanma izleyicisi, "neden değişti?" (gerçek DuckDB sorgu ağaçlarıyla uygunluk kararları, katkı hesabı, toplam doğrulaması) |
+| Uçtan uca | `npm run test:e2e` | 20 senaryo, gerçek Chromium + gerçek DuckDB-WASM (backend taklit edilir): dış istek yok, API aynı alan adından, veri sızıntısı yok, iki tablolu JOIN ve dosya ekleme/çıkarma, model çağrısız keşif, takip soruları, onaylı örnek değerler, motor kilidi, onarım, özet onayı, pano kalıcılığı, PDF rapor indirme, "neden değişti?" katkı analizi, durdurma, uyuyan sunucu, mobil |
 | Model | `uv run python scripts/eval_llm.py` | Gerçek Gemini ile 3 veri setinde 16 soru; SQL gerçek DuckDB'de çalıştırılır (`--with-values`: onaylı örnek değerlerle). Ayrıca `eval_followup.py` (takip) ve `eval_join.py` (çok tablo) |
 
 Son model değerlendirmesi (15.09.2026, gemini-3.5-flash-lite, 16 soru): **14 doğru sonuç, 1 doğru red** ("yarın dolar kaç olacak"), **1 yanlış red** ("aylık net kâr"), 0 çalışmayan SQL.

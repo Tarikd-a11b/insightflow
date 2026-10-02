@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, BarChart3, Check, ChevronRight, Compass, Copy, CornerDownRight, Database, FileDown, FileSpreadsheet, Image as ImageIcon, Info, LineChart, Loader2, PieChart, Pin, PinOff, SearchX, ShieldCheck, Sparkles, Table2, Terminal, TrendingDown, TrendingUp, Wrench, Zap } from "lucide-react";
+import { AlertTriangle, BarChart3, Check, ChevronRight, Compass, Copy, CornerDownRight, Microscope, Database, FileDown, FileSpreadsheet, Image as ImageIcon, Info, LineChart, Loader2, PieChart, Pin, PinOff, SearchX, ShieldCheck, Sparkles, Table2, Terminal, TrendingDown, TrendingUp, Wrench, Zap } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { ApiError, requestSummary, summaryPayload, type ChartKind } from "@/lib/api";
 import type { AskOutcome, AskStep } from "@/lib/ask";
@@ -10,7 +10,9 @@ import { formatInt } from "@/lib/format";
 import { pinStore } from "@/lib/pins";
 import type { ReportItem } from "@/lib/report";
 import { cn } from "@/lib/utils";
-import { hasChart, ResultView } from "./result-view";
+import { whyTarget } from "@/lib/why";
+import { ResultView } from "./result-view";
+import { WhyPanel, type WhyContext } from "./why-panel";
 
 /** Soru adımları: sunucu uyanırken kuyrukta bekleme + onarım döngüsünün adımları. */
 export type TurnStep = AskStep | { kind: "waiting" };
@@ -47,8 +49,11 @@ export function AnswerCard({
   isContext = false,
   parentQuestion,
   tableNames = [],
+  why,
 }: {
   turn: Turn;
+  /** Verilirse zaman serisi yanıtlarında "Neden Değişti?" analizi sunulur. */
+  why?: WhyContext;
   datasetName: string;
   /** Ek tablo adları: yönetici özetinde sunucu SQL'i bu tablolarla doğrular. */
   tableNames?: string[];
@@ -114,7 +119,7 @@ export function AnswerCard({
       )}
 
       {outcome?.kind === "answer" && (
-        <AnswerBody question={turn.question} answer={outcome} datasetName={datasetName} tableNames={tableNames} onContinue={() => onContinue(turn.id)} />
+        <AnswerBody question={turn.question} answer={outcome} datasetName={datasetName} tableNames={tableNames} why={why} onContinue={() => onContinue(turn.id)} />
       )}
     </article>
   );
@@ -135,12 +140,14 @@ function AnswerBody({
   datasetName,
   onContinue,
   tableNames,
+  why,
 }: {
   question: string;
   answer: Answer;
   datasetName: string;
   onContinue: () => void;
   tableNames: string[];
+  why?: WhyContext;
 }) {
   const chartOptions = useMemo(() => getAvailableChartKinds(answer.result), [answer.result]);
   const initialChart = useMemo<ChartKind>(() => {
@@ -153,6 +160,8 @@ function AnswerBody({
   const [selectedChart, setSelectedChart] = useState<ChartKind>(initialChart);
   const [pinId, setPinId] = useState<string | null>(null);
   const [summary, setSummary] = useState<string | undefined>(undefined);
+  const [whyOpen, setWhyOpen] = useState(false);
+  const target = useMemo(() => (why ? whyTarget(answer.result) : null), [why, answer.result]);
   const resultRef = useRef<HTMLDivElement>(null);
   const empty = answer.result.rows.length === 0;
 
@@ -213,6 +222,21 @@ function AnswerBody({
                 <CornerDownRight className="size-3.5 text-outbound" aria-hidden />
                 Takip Sorusu
               </button>
+              {target && (
+                <button
+                  type="button"
+                  onClick={() => setWhyOpen((o) => !o)}
+                  aria-expanded={whyOpen}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-all cursor-pointer",
+                    whyOpen ? "border-local/60 bg-secondary font-medium text-foreground" : "border-border/70 bg-card text-muted-foreground hover:border-local/60 hover:text-foreground hover:shadow-xs",
+                  )}
+                  title="İki dönem arasındaki değişimi kategorilere böl (tarayıcıda, model kullanmadan)"
+                >
+                  <Microscope className="size-3.5 text-local" aria-hidden />
+                  Neden Değişti?
+                </button>
+              )}
               <PdfButton item={{ question, datasetName, explanation: answer.explanation, sql: answer.sql, chart: selectedChart, result: answer.result, summary }} />
               <CsvButton result={answer.result} question={question} />
               {selectedChart !== "table" && selectedChart !== "kpi" && (
@@ -224,6 +248,7 @@ function AnswerBody({
           <div ref={resultRef}>
             <ResultView result={answer.result} chart={selectedChart} mode={selectedChart === "table" ? "table" : "auto"} />
           </div>
+          {whyOpen && target && why && <WhyPanel sql={answer.sql} result={answer.result} target={target} context={why} />}
         </>
       )}
 
